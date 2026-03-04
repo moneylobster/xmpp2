@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
+import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface RoomInfo {
@@ -77,6 +78,7 @@ export class RoomList extends LitElement {
   }
 
   private selectRoom(jid: string) {
+    hapticLight();
     this.dispatchEvent(
       new CustomEvent('room-selected', { detail: { jid }, bubbles: true, composed: true }),
     );

@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
+import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface ContactInfo {
@@ -105,6 +106,7 @@ export class ContactList extends LitElement {
   }
 
   private selectContact(jid: string) {
+    hapticLight();
     this.dispatchEvent(
       new CustomEvent('contact-selected', { detail: { jid }, bubbles: true, composed: true }),
     );

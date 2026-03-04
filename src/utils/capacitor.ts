@@ -1,0 +1,61 @@
+import { isNative, isAndroid } from './platform';
+import { getApi } from '@/xmpp/client';
+
+export async function initCapacitor() {
+  if (!isNative()) return;
+
+  // Hide splash screen
+  try {
+    const { SplashScreen } = await import('@capacitor/splash-screen');
+    await SplashScreen.hide();
+  } catch { /* ignore */ }
+
+  // Configure status bar
+  try {
+    const { StatusBar } = await import('@capacitor/status-bar');
+    const isDark = document.documentElement.classList.contains('dark');
+    await StatusBar.setStyle({ style: isDark ? 'DARK' : 'LIGHT' as any });
+    if (isAndroid()) {
+      await StatusBar.setBackgroundColor({ color: '#0f172a' });
+    }
+  } catch { /* ignore */ }
+
+  // App lifecycle: reconnect on resume
+  try {
+    const { App } = await import('@capacitor/app');
+
+    App.addListener('appStateChange', async ({ isActive }) => {
+      const api = getApi();
+      if (!api) return;
+
+      if (isActive) {
+        // Reconnect if disconnected
+        try {
+          await api.connection.reconnect();
+        } catch { /* already connected */ }
+      }
+    });
+
+    // Android back button
+    if (isAndroid()) {
+      App.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) {
+          window.history.back();
+        } else {
+          App.minimizeApp();
+        }
+      });
+    }
+  } catch { /* ignore */ }
+
+  // Keyboard handling
+  try {
+    const { Keyboard } = await import('@capacitor/keyboard');
+    Keyboard.addListener('keyboardWillShow', () => {
+      document.body.classList.add('keyboard-open');
+    });
+    Keyboard.addListener('keyboardWillHide', () => {
+      document.body.classList.remove('keyboard-open');
+    });
+  } catch { /* ignore */ }
+}

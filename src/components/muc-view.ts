@@ -7,6 +7,7 @@ import {
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
+import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface MucMessage {
@@ -211,6 +212,7 @@ export class MucView extends LitElement {
     this.inputText = '';
     try {
       await this.muc.sendMessage({ body: text });
+      hapticLight();
       this.autoScroll = true;
       this.scrollToBottom();
     } catch (err) {

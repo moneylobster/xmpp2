@@ -90,15 +90,22 @@
 - [x] Tab title unread badge (e.g. "(3) XMPP Chat")
 - [x] Notification sound on new unread message (toggleable in settings)
 
-## Phase 9: Capacitor Integration (Mobile)
-- [ ] Add Capacitor to the project
-- [ ] Configure iOS and Android projects
-- [ ] Push notifications (via XMPP push, XEP-0357)
-- [ ] Background connection handling
-- [ ] Native file picker for uploads
-- [ ] Haptic feedback
-- [ ] App icon and splash screen
-- [ ] Test on physical devices
+## Phase 9: Capacitor Integration (Mobile) ✅
+- [x] Add Capacitor to the project (@capacitor/core, cli, android, ios)
+- [x] Configure capacitor.config.ts (SplashScreen, StatusBar, Keyboard)
+- [x] Platform detection utilities (isNative, isAndroid, isIOS, isWeb)
+- [x] Haptic feedback on send message, contact/room tap (no-op on web)
+- [x] Push notification registration + XEP-0357 stanza helper
+- [x] App lifecycle: auto-reconnect on resume from background
+- [x] Android back button handling (navigate back or minimize)
+- [x] Keyboard show/hide body class for layout adjustments
+- [x] Status bar theme sync (dark/light)
+- [x] Splash screen auto-hide after connection
+- [x] GitHub Actions: manual Android APK build workflow
+- [x] GitHub Actions: manual iOS simulator build workflow
+- [x] android/ and ios/ in .gitignore (generated in CI)
+- [ ] App icon and splash screen assets — deferred
+- [ ] Test on physical devices — deferred
 
 ## Phase 10: Polish & Reliability
 - [ ] Comprehensive error handling throughout

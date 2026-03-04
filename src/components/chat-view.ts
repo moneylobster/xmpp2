@@ -8,6 +8,7 @@ import {
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
+import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface MessageInfo {
@@ -257,6 +258,7 @@ export class ChatView extends LitElement {
     this.inputText = '';
     try {
       await this.chatbox.sendMessage({ body: text });
+      hapticLight();
       this.autoScroll = true;
       this.scrollToBottom();
     } catch (err) {
