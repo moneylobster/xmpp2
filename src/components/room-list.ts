@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
+import './skeleton-loader';
 
 interface RoomInfo {
   jid: string;
@@ -16,6 +17,7 @@ export class RoomList extends LitElement {
   @state() private showJoinDialog = false;
   @state() private joinRoomJid = '';
   @state() private joinNick = '';
+  @state() private loading = true;
   @property({ type: String }) selectedJid = '';
 
   private cleanups: Array<() => void> = [];
@@ -37,6 +39,7 @@ export class RoomList extends LitElement {
 
     await api.waitUntil('roomsAutoJoined').catch(() => {});
     this.loadRooms();
+    this.loading = false;
 
     const events = ['chatRoomInitialized', 'leaveRoom', 'chatBoxClosed'];
     for (const evt of events) {
@@ -45,7 +48,6 @@ export class RoomList extends LitElement {
       this.cleanups.push(() => api.listen.not(evt, handler));
     }
 
-    // Refresh on new messages for unread counts
     const msgHandler = () => setTimeout(() => this.loadRooms(), 200);
     api.listen.on('message', msgHandler);
     this.cleanups.push(() => api.listen.not('message', msgHandler));
@@ -80,9 +82,15 @@ export class RoomList extends LitElement {
     );
   }
 
+  private handleRoomKeyDown(e: KeyboardEvent, jid: string) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      this.selectRoom(jid);
+    }
+  }
+
   private openJoinDialog() {
     this.showJoinDialog = true;
-    // Pre-fill nickname from current JID
     const api = getApi();
     const userJid = api?.user?.jid?.() || '';
     this.joinNick = userJid.split('@')[0] || '';
@@ -143,7 +151,7 @@ export class RoomList extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #64748b;
+      color: var(--color-text-sidebar-muted);
     }
 
     .add-btn {
@@ -154,12 +162,16 @@ export class RoomList extends LitElement {
       cursor: pointer;
       padding: 0.1875rem 0.5rem;
       border-radius: 0.25rem;
-      transition: all 0.12s;
+      transition: all var(--duration-fast);
     }
 
     .add-btn:hover {
       background: rgba(255, 255, 255, 0.08);
       color: white;
+    }
+
+    .add-btn:active {
+      transform: scale(0.95);
     }
 
     .list {
@@ -175,27 +187,31 @@ export class RoomList extends LitElement {
       padding: 0.5rem 0.75rem;
       border-radius: 0.5rem;
       cursor: pointer;
-      transition: background 0.12s;
+      transition: background var(--duration-fast), transform var(--duration-fast);
     }
 
     .room:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--color-bg-hover);
+    }
+
+    .room:active {
+      transform: scale(0.98);
     }
 
     .room.selected {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--color-bg-selected);
     }
 
     .room-icon {
       width: 2rem;
       height: 2rem;
       border-radius: 0.375rem;
-      background: #1e3a5f;
+      background: var(--color-room-icon-bg);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.75rem;
-      color: #60a5fa;
+      color: var(--color-room-icon-text);
       flex-shrink: 0;
       font-weight: 600;
     }
@@ -208,7 +224,7 @@ export class RoomList extends LitElement {
     .room-name {
       font-size: 0.8125rem;
       font-weight: 500;
-      color: #e2e8f0;
+      color: var(--color-text-sidebar);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -216,15 +232,15 @@ export class RoomList extends LitElement {
 
     .room-topic {
       font-size: 0.6875rem;
-      color: #64748b;
+      color: var(--color-text-sidebar-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .badge {
-      background: #3b82f6;
-      color: white;
+      background: var(--color-badge);
+      color: var(--color-badge-text);
       font-size: 0.6875rem;
       font-weight: 600;
       min-width: 1.125rem;
@@ -237,46 +253,78 @@ export class RoomList extends LitElement {
       flex-shrink: 0;
     }
 
-    .empty {
+    .empty-state {
       text-align: center;
-      padding: 1rem;
-      color: #64748b;
+      padding: 1.25rem 1rem;
+      color: var(--color-text-sidebar-muted);
+    }
+
+    .empty-state svg {
+      margin-bottom: 0.5rem;
+      opacity: 0.4;
+    }
+
+    .empty-state p {
+      margin: 0;
+      font-size: 0.75rem;
+      line-height: 1.4;
+    }
+
+    .empty-state .action {
+      display: inline-block;
+      margin-top: 0.5rem;
+      color: var(--color-room-icon-text);
+      cursor: pointer;
       font-size: 0.75rem;
     }
+
+    .empty-state .action:hover { text-decoration: underline; }
 
     /* Join dialog */
     .dialog-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: var(--color-bg-overlay);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 100;
       padding: 1rem;
+      animation: fadeIn 0.15s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     .dialog {
-      background: white;
+      background: var(--color-bg-card, #fff);
       border-radius: 0.75rem;
       padding: 1.5rem;
       width: 100%;
       max-width: 360px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--shadow-card);
+      animation: dialogIn 0.2s ease-out;
+    }
+
+    @keyframes dialogIn {
+      from { transform: scale(0.95) translateY(10px); opacity: 0; }
+      to { transform: scale(1) translateY(0); opacity: 1; }
     }
 
     .dialog h3 {
       margin: 0 0 1rem;
       font-size: 1rem;
       font-weight: 600;
-      color: #0f172a;
+      color: var(--color-text, #0f172a);
     }
 
     .dialog label {
       display: block;
       font-size: 0.8125rem;
       font-weight: 500;
-      color: #334155;
+      color: var(--color-text-secondary, #334155);
       margin-bottom: 0.25rem;
     }
 
@@ -284,18 +332,20 @@ export class RoomList extends LitElement {
       display: block;
       width: 100%;
       padding: 0.5rem 0.75rem;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border, #e2e8f0);
       border-radius: 0.375rem;
       font-size: 0.875rem;
-      color: #0f172a;
+      color: var(--color-text, #0f172a);
+      background: var(--color-bg-input, #f8fafc);
       outline: none;
       box-sizing: border-box;
       margin-bottom: 0.75rem;
+      transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
     }
 
     .dialog input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+      border-color: var(--color-border-focus, #3b82f6);
+      box-shadow: 0 0 0 2px var(--color-focus-ring);
     }
 
     .dialog-actions {
@@ -312,24 +362,27 @@ export class RoomList extends LitElement {
       font-weight: 500;
       cursor: pointer;
       border: none;
+      transition: background var(--duration-fast), transform var(--duration-fast);
     }
 
+    .dialog-actions button:active { transform: scale(0.97); }
+
     .btn-cancel {
-      background: #f1f5f9;
-      color: #475569;
+      background: var(--color-border, #f1f5f9);
+      color: var(--color-text-secondary, #475569);
     }
 
     .btn-cancel:hover {
-      background: #e2e8f0;
+      background: var(--color-border, #e2e8f0);
     }
 
     .btn-join {
-      background: #2563eb;
-      color: white;
+      background: var(--color-primary, #2563eb);
+      color: var(--color-primary-text, white);
     }
 
     .btn-join:hover {
-      background: #1d4ed8;
+      background: var(--color-primary-hover, #1d4ed8);
     }
 
     .btn-join:disabled {
@@ -342,34 +395,47 @@ export class RoomList extends LitElement {
     return html`
       <div class="section-header">
         <span class="section-title">Rooms</span>
-        <button class="add-btn" @click=${this.openJoinDialog}>+ Join</button>
+        <button class="add-btn" @click=${this.openJoinDialog} aria-label="Join a room">+ Join</button>
       </div>
-      <div class="list">
-        ${this.rooms.length === 0
-          ? html`<div class="empty">No rooms joined</div>`
-          : repeat(
-              this.rooms,
-              (r) => r.jid,
-              (r) => html`
-                <div
-                  class="room ${this.selectedJid === r.jid ? 'selected' : ''}"
-                  @click=${() => this.selectRoom(r.jid)}
-                  title=${r.jid}
-                >
-                  <div class="room-icon">#</div>
-                  <div class="room-info">
-                    <div class="room-name">${r.name}</div>
-                    ${r.topic ? html`<div class="room-topic">${r.topic}</div>` : nothing}
+      <div class="list" role="listbox" aria-label="Rooms">
+        ${this.loading
+          ? html`<skeleton-loader rows="2" variant="room"></skeleton-loader>`
+          : this.rooms.length === 0
+            ? html`<div class="empty-state">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  <line x1="9" y1="10" x2="15" y2="10"/>
+                </svg>
+                <p>No rooms joined</p>
+                <span class="action" @click=${this.openJoinDialog}>Join a room</span>
+              </div>`
+            : repeat(
+                this.rooms,
+                (r) => r.jid,
+                (r) => html`
+                  <div
+                    class="room ${this.selectedJid === r.jid ? 'selected' : ''}"
+                    @click=${() => this.selectRoom(r.jid)}
+                    @keydown=${(e: KeyboardEvent) => this.handleRoomKeyDown(e, r.jid)}
+                    title=${r.jid}
+                    role="option"
+                    tabindex="0"
+                    aria-selected=${this.selectedJid === r.jid}
+                  >
+                    <div class="room-icon">#</div>
+                    <div class="room-info">
+                      <div class="room-name">${r.name}</div>
+                      ${r.topic ? html`<div class="room-topic">${r.topic}</div>` : nothing}
+                    </div>
+                    ${r.numUnread > 0 ? html`<span class="badge">${r.numUnread}</span>` : nothing}
                   </div>
-                  ${r.numUnread > 0 ? html`<span class="badge">${r.numUnread}</span>` : nothing}
-                </div>
-              `,
-            )}
+                `,
+              )}
       </div>
 
       ${this.showJoinDialog
         ? html`
-            <div class="dialog-overlay" @click=${this.closeJoinDialog}>
+            <div class="dialog-overlay" @click=${this.closeJoinDialog} role="dialog" aria-modal="true" aria-label="Join room">
               <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
                 <h3>Join Room</h3>
                 <label for="room-jid">Room address</label>

@@ -69,16 +69,26 @@
 - [x] File size limits and type validation
 - [x] Integration with OMEMO (encrypt before upload, aesgcm:// URL decryption & preview)
 
-## Phase 8: Modern UI & UX
-- [ ] Design system: typography, colors, spacing, dark/light mode
-- [ ] Responsive layout: sidebar + chat panel (desktop), stacked views (mobile)
-- [ ] Chat bubble design with timestamps, status icons, avatars
-- [ ] Contact/room list with search, unread badges, presence dots
-- [ ] Smooth transitions and animations
-- [ ] Empty states, loading skeletons
-- [ ] Notification badges and sounds
-- [ ] Settings screen (account, appearance, encryption, notifications)
-- [ ] Accessibility (keyboard nav, screen reader, contrast)
+## Phase 8: Modern UI & UX ✅
+- [x] Design system: CSS custom properties for all colors, dark/light/auto mode
+- [x] Dark mode via `prefers-color-scheme` + manual `.dark`/`.light` class toggle
+- [x] Theme preference persisted in localStorage, toggle button in sidebar
+- [x] Skeleton loaders (contact, room, message variants with pulse animation)
+- [x] Toast notification system (stackable, auto-dismiss with progress bar)
+- [x] Settings screen (theme picker, notification sound toggle, about)
+- [x] Enhanced empty states with SVG icons and action prompts
+- [x] Message entrance animation (fade + slide up)
+- [x] Typing indicator animated dots (bouncing)
+- [x] Presence dot pulse animation for online contacts
+- [x] Button micro-interactions (scale on active/click)
+- [x] Dialog and card entrance animations
+- [x] Login error shake animation
+- [x] Mobile slide-in transition for chat view
+- [x] ARIA labels/roles on all interactive elements
+- [x] Keyboard navigation (Tab through contacts/rooms, Enter/Space to select)
+- [x] `focus-visible` styling globally
+- [x] Tab title unread badge (e.g. "(3) XMPP Chat")
+- [x] Notification sound on new unread message (toggleable in settings)
 
 ## Phase 9: Capacitor Integration (Mobile)
 - [ ] Add Capacitor to the project

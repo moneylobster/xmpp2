@@ -7,6 +7,7 @@ import {
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
+import './skeleton-loader';
 
 interface MucMessage {
   id: string;
@@ -97,7 +98,6 @@ export class MucView extends LitElement {
       this.roomName = this.muc.get('name') || this.jid.split('@')[0];
       this.roomTopic = this.muc.get('subject')?.text || '';
 
-      // Wait for messages
       if (this.muc.messages?.fetched) {
         await this.muc.messages.fetched;
       }
@@ -107,7 +107,6 @@ export class MucView extends LitElement {
       this.loading = false;
       this.scrollToBottom();
 
-      // Listen for new messages
       const msgHandler = () => {
         this.loadMessages();
         if (this.autoScroll) this.scrollToBottom();
@@ -119,7 +118,6 @@ export class MucView extends LitElement {
         this.muc?.messages?.off('change', msgHandler);
       });
 
-      // Listen for occupant changes
       const occHandler = () => this.loadOccupants();
       this.muc.occupants.on('add', occHandler);
       this.muc.occupants.on('remove', occHandler);
@@ -130,14 +128,12 @@ export class MucView extends LitElement {
         this.muc?.occupants?.off('change', occHandler);
       });
 
-      // Listen for topic changes
       const topicHandler = () => {
         this.roomTopic = this.muc?.get('subject')?.text || '';
       };
       this.muc.on('change:subject', topicHandler);
       this.cleanups.push(() => this.muc?.off('change:subject', topicHandler));
 
-      // Track OMEMO state
       this.cleanups.push(trackOmemo(this.muc, (active, supported) => {
         this.omemoActive = active;
         this.omemoSupported = supported;
@@ -152,10 +148,7 @@ export class MucView extends LitElement {
     if (!this.muc?.messages) return;
 
     this.messages = this.muc.messages
-      .filter((m: any) => {
-        const body = m.get('body');
-        return !!body;
-      })
+      .filter((m: any) => !!m.get('body'))
       .map((m: any) => {
         const timeISO = m.get('time') || '';
         const body = getMessageBody(m);
@@ -199,7 +192,6 @@ export class MucView extends LitElement {
       }))
       .sort((a: OccupantInfo, b: OccupantInfo) => a.nick.localeCompare(b.nick));
   }
-
 
   private scrollToBottom() {
     requestAnimationFrame(() => {
@@ -317,9 +309,9 @@ export class MucView extends LitElement {
   }
 
   private roleIcon(occ: OccupantInfo): string {
-    if (occ.affiliation === 'owner') return '👑';
-    if (occ.affiliation === 'admin') return '⭐';
-    if (occ.role === 'moderator') return '🛡️';
+    if (occ.affiliation === 'owner') return '\u{1F451}';
+    if (occ.affiliation === 'admin') return '\u2B50';
+    if (occ.role === 'moderator') return '\u{1F6E1}\uFE0F';
     return '';
   }
 
@@ -328,7 +320,8 @@ export class MucView extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #f8fafc;
+      background: var(--color-bg);
+      position: relative;
     }
 
     .header {
@@ -336,8 +329,8 @@ export class MucView extends LitElement {
       align-items: center;
       gap: 0.75rem;
       padding: 0.875rem 1rem;
-      background: white;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--color-bg-card);
+      border-bottom: 1px solid var(--color-border);
       flex-shrink: 0;
     }
 
@@ -345,11 +338,12 @@ export class MucView extends LitElement {
       display: none;
       background: none;
       border: none;
-      color: #3b82f6;
+      color: var(--color-primary);
       font-size: 1.25rem;
       cursor: pointer;
       padding: 0.25rem;
       line-height: 1;
+      border-radius: 0.25rem;
     }
 
     @media (max-width: 768px) {
@@ -360,12 +354,12 @@ export class MucView extends LitElement {
       width: 2.25rem;
       height: 2.25rem;
       border-radius: 0.375rem;
-      background: #eff6ff;
+      background: var(--color-primary-light);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1rem;
-      color: #2563eb;
+      color: var(--color-primary);
       flex-shrink: 0;
       font-weight: 700;
     }
@@ -375,7 +369,7 @@ export class MucView extends LitElement {
     .header-name {
       font-size: 0.9375rem;
       font-weight: 600;
-      color: #0f172a;
+      color: var(--color-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -383,7 +377,7 @@ export class MucView extends LitElement {
 
     .header-topic {
       font-size: 0.75rem;
-      color: #64748b;
+      color: var(--color-text-secondary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -391,32 +385,32 @@ export class MucView extends LitElement {
 
     .omemo-btn {
       background: none;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border);
       border-radius: 0.375rem;
       padding: 0.25rem 0.5rem;
       cursor: pointer;
       font-size: 0.875rem;
-      transition: all 0.12s;
+      transition: all var(--duration-fast);
       flex-shrink: 0;
     }
 
-    .omemo-btn:hover { background: #f1f5f9; }
-    .omemo-btn.active { border-color: #22c55e; background: #f0fdf4; }
+    .omemo-btn:hover { background: var(--color-bg); }
+    .omemo-btn.active { border-color: var(--color-success); background: var(--color-success-bg); }
 
     .occupants-btn {
       background: none;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border);
       border-radius: 0.375rem;
       padding: 0.25rem 0.5rem;
       cursor: pointer;
       font-size: 0.75rem;
-      color: #64748b;
+      color: var(--color-text-secondary);
       flex-shrink: 0;
-      transition: all 0.12s;
+      transition: all var(--duration-fast);
     }
 
-    .occupants-btn:hover { background: #f1f5f9; }
-    .occupants-btn.active { border-color: #3b82f6; color: #2563eb; background: #eff6ff; }
+    .occupants-btn:hover { background: var(--color-bg); }
+    .occupants-btn.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
 
     .body { display: flex; flex: 1; overflow: hidden; }
 
@@ -441,13 +435,13 @@ export class MucView extends LitElement {
       content: '';
       flex: 1;
       height: 1px;
-      background: #e2e8f0;
+      background: var(--color-border);
     }
 
     .date-label {
       font-size: 0.6875rem;
       font-weight: 500;
-      color: #94a3b8;
+      color: var(--color-text-muted);
       text-transform: uppercase;
       letter-spacing: 0.025em;
       white-space: nowrap;
@@ -461,21 +455,27 @@ export class MucView extends LitElement {
       line-height: 1.45;
       word-wrap: break-word;
       overflow-wrap: break-word;
+      animation: msgIn 0.2s ease-out;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .msg.me {
       align-self: flex-end;
-      background: #2563eb;
-      color: white;
+      background: var(--color-msg-me);
+      color: var(--color-msg-me-text);
       border-bottom-right-radius: 0.25rem;
     }
 
     .msg.them {
       align-self: flex-start;
-      background: white;
-      color: #0f172a;
+      background: var(--color-msg-them);
+      color: var(--color-msg-them-text);
       border-bottom-left-radius: 0.25rem;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      box-shadow: var(--shadow-msg);
     }
 
     .msg-nick {
@@ -498,8 +498,8 @@ export class MucView extends LitElement {
     /* Occupants panel */
     .occupants-panel {
       width: 200px;
-      background: white;
-      border-left: 1px solid #e2e8f0;
+      background: var(--color-bg-card);
+      border-left: 1px solid var(--color-border);
       overflow-y: auto;
       flex-shrink: 0;
     }
@@ -510,8 +510,8 @@ export class MucView extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #94a3b8;
-      border-bottom: 1px solid #f1f5f9;
+      color: var(--color-text-muted);
+      border-bottom: 1px solid var(--color-border);
     }
 
     .occ {
@@ -530,7 +530,7 @@ export class MucView extends LitElement {
 
     .occ-nick {
       font-size: 0.8125rem;
-      color: #334155;
+      color: var(--color-text-secondary);
       flex: 1;
       white-space: nowrap;
       overflow: hidden;
@@ -546,28 +546,41 @@ export class MucView extends LitElement {
       .occupants-panel { display: none; }
     }
 
-    .loading, .empty-chat {
+    .loading {
       display: flex;
       align-items: center;
       justify-content: center;
       flex: 1;
-      color: #94a3b8;
-      font-size: 0.875rem;
     }
+
+    .empty-chat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      color: var(--color-text-muted);
+      text-align: center;
+      padding: 2rem;
+      gap: 0.75rem;
+    }
+
+    .empty-chat svg { opacity: 0.3; }
+    .empty-chat p { margin: 0; font-size: 0.875rem; }
 
     .input-bar {
       display: flex;
       align-items: flex-end;
       gap: 0.5rem;
       padding: 0.75rem 1rem;
-      background: white;
-      border-top: 1px solid #e2e8f0;
+      background: var(--color-bg-card);
+      border-top: 1px solid var(--color-border);
       flex-shrink: 0;
     }
 
     .input-bar textarea {
       flex: 1;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border);
       border-radius: 1.25rem;
       padding: 0.5rem 0.875rem;
       font-size: 0.875rem;
@@ -576,29 +589,32 @@ export class MucView extends LitElement {
       outline: none;
       max-height: 120px;
       line-height: 1.4;
-      color: #0f172a;
-      background: #f8fafc;
+      color: var(--color-text);
+      background: var(--color-bg-input);
+      transition: border-color var(--duration-fast), background var(--duration-fast);
     }
 
-    .input-bar textarea:focus { border-color: #3b82f6; background: white; }
+    .input-bar textarea:focus { border-color: var(--color-border-focus); background: var(--color-bg-card); }
 
     .send-btn {
       width: 2.25rem;
       height: 2.25rem;
       border: none;
       border-radius: 50%;
-      background: #2563eb;
+      background: var(--color-primary);
       color: white;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: background 0.12s;
+      transition: background var(--duration-fast), transform var(--duration-fast);
     }
 
-    .send-btn:hover { background: #1d4ed8; }
-    .send-btn:disabled { background: #cbd5e1; cursor: default; }
+    .send-btn:hover { background: var(--color-primary-hover); }
+    .send-btn:active { transform: scale(0.93); }
+    .send-btn:disabled { background: var(--color-text-muted); cursor: default; }
+    .send-btn:disabled:active { transform: none; }
     .send-btn svg { width: 1.125rem; height: 1.125rem; }
 
     .attach-btn {
@@ -607,56 +623,57 @@ export class MucView extends LitElement {
       border: none;
       border-radius: 50%;
       background: none;
-      color: #64748b;
+      color: var(--color-text-secondary);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: color 0.12s;
+      transition: color var(--duration-fast), transform var(--duration-fast);
     }
 
-    .attach-btn:hover { color: #2563eb; }
-    .attach-btn:disabled { color: #cbd5e1; cursor: default; }
+    .attach-btn:hover { color: var(--color-primary); }
+    .attach-btn:active { transform: scale(0.93); }
+    .attach-btn:disabled { color: var(--color-text-muted); cursor: default; }
     .attach-btn svg { width: 1.25rem; height: 1.25rem; }
 
     .upload-bar {
       padding: 0.25rem 1rem 0.5rem;
-      background: white;
+      background: var(--color-bg-card);
     }
 
     .upload-progress {
       height: 3px;
-      background: #e2e8f0;
+      background: var(--color-border);
       border-radius: 2px;
       overflow: hidden;
     }
 
     .upload-progress-fill {
       height: 100%;
-      background: #2563eb;
+      background: var(--color-primary);
       transition: width 0.15s;
     }
 
     .upload-error {
       font-size: 0.75rem;
-      color: #dc2626;
+      color: var(--color-error);
       padding: 0.25rem 1rem;
-      background: #fef2f2;
+      background: var(--color-error-bg);
     }
 
     .drag-overlay {
       position: absolute;
       inset: 0;
       background: rgba(37, 99, 235, 0.08);
-      border: 2px dashed #2563eb;
+      border: 2px dashed var(--color-primary);
       border-radius: 0.5rem;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.875rem;
       font-weight: 500;
-      color: #2563eb;
+      color: var(--color-primary);
       z-index: 10;
       pointer-events: none;
     }
@@ -689,14 +706,11 @@ export class MucView extends LitElement {
     }
 
     .msg-file-link:hover { text-decoration: underline; }
-
-    :host { position: relative; }
   `;
 
   private renderMessageBody(msg: MucMessage) {
     const body = msg.body.trim();
 
-    // Handle aesgcm:// encrypted file URLs
     if (isAesgcmUrl(body)) {
       const blobUrl = msg.decryptedUrl;
       if (blobUrl === undefined || blobUrl === null) {
@@ -717,7 +731,6 @@ export class MucView extends LitElement {
       </a>`;
     }
 
-    // Handle regular URLs
     try {
       const url = new URL(body);
       if (url.protocol === 'http:' || url.protocol === 'https:') {
@@ -756,7 +769,7 @@ export class MucView extends LitElement {
             : nothing}
           ${this.renderMessageBody(msg)}
           <div class="msg-meta">
-            ${msg.isEncrypted ? html`<span title="Encrypted">🔒</span>` : nothing}
+            ${msg.isEncrypted ? html`<span title="Encrypted">&#x1F512;</span>` : nothing}
             <span>${msg.time}</span>
           </div>
         </div>
@@ -768,7 +781,7 @@ export class MucView extends LitElement {
   render() {
     return html`
       <div class="header">
-        <button class="back-btn" @click=${this.handleBack}>←</button>
+        <button class="back-btn" @click=${this.handleBack} aria-label="Go back">&larr;</button>
         <div class="header-icon">#</div>
         <div class="header-info">
           <div class="header-name">${this.roomName}</div>
@@ -778,12 +791,14 @@ export class MucView extends LitElement {
           class="omemo-btn ${this.omemoActive ? 'active' : ''}"
           @click=${this.toggleOmemo}
           title="${this.omemoActive ? 'OMEMO encryption enabled' : 'OMEMO encryption disabled'}"
+          aria-label="${this.omemoActive ? 'Disable OMEMO' : 'Enable OMEMO'}"
         >
-          ${this.omemoActive ? '🔒' : '🔓'}
+          ${this.omemoActive ? '\u{1F512}' : '\u{1F513}'}
         </button>
         <button
           class="occupants-btn ${this.showOccupants ? 'active' : ''}"
           @click=${() => (this.showOccupants = !this.showOccupants)}
+          aria-label="Toggle members panel"
         >
           ${this.occupants.length} members
         </button>
@@ -792,18 +807,25 @@ export class MucView extends LitElement {
       ${this.dragOver ? html`<div class="drag-overlay">Drop file to upload</div>` : nothing}
 
       ${this.loading
-        ? html`<div class="loading">Joining room...</div>`
+        ? html`<div class="loading"><skeleton-loader rows="5" variant="message"></skeleton-loader></div>`
         : html`
             <div class="body">
               <div class="messages" @scroll=${this.handleScroll}
-                @dragover=${this.handleDragOver} @dragleave=${this.handleDragLeave} @drop=${this.handleDrop}>
+                @dragover=${this.handleDragOver} @dragleave=${this.handleDragLeave} @drop=${this.handleDrop}
+                role="log" aria-label="Room messages">
                 ${this.messages.length === 0
-                  ? html`<div class="empty-chat">No messages yet</div>`
+                  ? html`<div class="empty-chat">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        <line x1="9" y1="10" x2="15" y2="10"/>
+                      </svg>
+                      <p>No messages yet</p>
+                    </div>`
                   : this.renderMessages()}
               </div>
               ${this.showOccupants
                 ? html`
-                    <div class="occupants-panel">
+                    <div class="occupants-panel" role="complementary" aria-label="Room members">
                       <div class="occ-header">Members (${this.occupants.length})</div>
                       ${this.occupants.map(
                         (o) => html`
@@ -834,7 +856,7 @@ export class MucView extends LitElement {
 
       <input type="file" id="file-input" hidden @change=${this.handleFileSelect} />
       <div class="input-bar">
-        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading} title="Attach file">
+        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading} title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
           </svg>
@@ -846,12 +868,14 @@ export class MucView extends LitElement {
           @input=${(e: Event) => (this.inputText = (e.target as HTMLTextAreaElement).value)}
           @keydown=${this.handleKeyDown}
           @paste=${this.handlePaste}
+          aria-label="Message input"
         ></textarea>
         <button
           class="send-btn"
           @click=${this.sendMessage}
           ?disabled=${!this.inputText.trim()}
           title="Send"
+          aria-label="Send message"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"></line>

@@ -2,13 +2,223 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Primary */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-primary-text: #ffffff;
+
+  /* Backgrounds */
+  --color-bg: #f8fafc;
+  --color-bg-card: #ffffff;
+  --color-bg-sidebar: #0f172a;
+  --color-bg-input: #f8fafc;
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-selected: rgba(255, 255, 255, 0.1);
+  --color-bg-overlay: rgba(0, 0, 0, 0.5);
+
+  /* Text */
+  --color-text: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+  --color-text-sidebar: #e2e8f0;
+  --color-text-sidebar-muted: #64748b;
+
+  /* Borders */
+  --color-border: #e2e8f0;
+  --color-border-sidebar: rgba(255, 255, 255, 0.08);
+  --color-border-focus: #3b82f6;
+
+  /* Status */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-error-border: #fecaca;
+  --color-success-bg: #f0fdf4;
+
+  /* Avatars */
+  --color-avatar-bg: #334155;
+  --color-avatar-text: #94a3b8;
+  --color-avatar-bg-light: #e2e8f0;
+  --color-avatar-text-light: #64748b;
+
+  /* Messages */
+  --color-msg-me: #2563eb;
+  --color-msg-me-text: #ffffff;
+  --color-msg-them: #ffffff;
+  --color-msg-them-text: #0f172a;
+  --color-msg-them-shadow: rgba(0, 0, 0, 0.05);
+
+  /* Badge */
+  --color-badge: #3b82f6;
+  --color-badge-text: #ffffff;
+
+  /* Room icon */
+  --color-room-icon-bg: #1e3a5f;
+  --color-room-icon-text: #60a5fa;
+
+  /* Search input in sidebar */
+  --color-sidebar-input: rgba(255, 255, 255, 0.08);
+  --color-sidebar-input-focus: rgba(255, 255, 255, 0.12);
+
+  /* Focus ring */
+  --color-focus-ring: rgba(59, 130, 246, 0.4);
+
+  /* Shadows */
+  --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-msg: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  /* Animation durations */
+  --duration-fast: 0.12s;
+  --duration-normal: 0.2s;
+  --duration-slow: 0.3s;
+}
+
+/* Dark mode */
+:root.dark {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-light: #1e293b;
+
+  --color-bg: #0f172a;
+  --color-bg-card: #1e293b;
+  --color-bg-sidebar: #020617;
+  --color-bg-input: #1e293b;
+  --color-bg-overlay: rgba(0, 0, 0, 0.7);
+
+  --color-text: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-sidebar: #e2e8f0;
+  --color-text-sidebar-muted: #475569;
+
+  --color-border: #334155;
+  --color-border-sidebar: rgba(255, 255, 255, 0.06);
+
+  --color-error-bg: #1c1917;
+  --color-error-border: #7f1d1d;
+  --color-success-bg: #052e16;
+
+  --color-avatar-bg: #1e293b;
+  --color-avatar-bg-light: #334155;
+  --color-avatar-text-light: #94a3b8;
+
+  --color-msg-me: #2563eb;
+  --color-msg-me-text: #ffffff;
+  --color-msg-them: #1e293b;
+  --color-msg-them-text: #e2e8f0;
+  --color-msg-them-shadow: rgba(0, 0, 0, 0.2);
+
+  --color-room-icon-bg: #1e3a5f;
+  --color-room-icon-text: #60a5fa;
+
+  --color-sidebar-input: rgba(255, 255, 255, 0.06);
+  --color-sidebar-input-focus: rgba(255, 255, 255, 0.1);
+
+  --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --shadow-msg: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-primary: #3b82f6;
+    --color-primary-hover: #2563eb;
+    --color-primary-light: #1e293b;
+
+    --color-bg: #0f172a;
+    --color-bg-card: #1e293b;
+    --color-bg-sidebar: #020617;
+    --color-bg-input: #1e293b;
+    --color-bg-overlay: rgba(0, 0, 0, 0.7);
+
+    --color-text: #e2e8f0;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #64748b;
+    --color-text-sidebar: #e2e8f0;
+    --color-text-sidebar-muted: #475569;
+
+    --color-border: #334155;
+    --color-border-sidebar: rgba(255, 255, 255, 0.06);
+
+    --color-error-bg: #1c1917;
+    --color-error-border: #7f1d1d;
+    --color-success-bg: #052e16;
+
+    --color-avatar-bg: #1e293b;
+    --color-avatar-bg-light: #334155;
+    --color-avatar-text-light: #94a3b8;
+
+    --color-msg-me: #2563eb;
+    --color-msg-me-text: #ffffff;
+    --color-msg-them: #1e293b;
+    --color-msg-them-text: #e2e8f0;
+    --color-msg-them-shadow: rgba(0, 0, 0, 0.2);
+
+    --color-room-icon-bg: #1e3a5f;
+    --color-room-icon-text: #60a5fa;
+
+    --color-sidebar-input: rgba(255, 255, 255, 0.06);
+    --color-sidebar-input-focus: rgba(255, 255, 255, 0.1);
+
+    --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    --shadow-msg: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Global animations */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+}
+
+@keyframes progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--color-bg);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -16,4 +226,10 @@ html, body {
 xmpp-app {
   display: block;
   height: 100%;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
 }

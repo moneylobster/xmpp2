@@ -4,6 +4,7 @@ import { initClient, getConnectionStatus } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from '@/xmpp/events';
 import type { ConnectionStatus } from '@/types';
 
+import './utils/theme';
 import './components/login-view';
 import './components/app-shell';
 

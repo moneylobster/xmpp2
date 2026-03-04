@@ -8,6 +8,7 @@ import {
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
+import './skeleton-loader';
 
 interface MessageInfo {
   id: string;
@@ -47,7 +48,6 @@ export class ChatView extends LitElement {
   private chatbox: any = null;
   private cleanups: Array<() => void> = [];
   private autoScroll = true;
-  /** Cache of decrypted aesgcm blob URLs keyed by aesgcm URL */
   private decryptedCache = new Map<string, string | null>();
 
   connectedCallback() {
@@ -85,7 +85,6 @@ export class ChatView extends LitElement {
     if (!api || !this.jid) return;
     this.loading = true;
 
-    // Load contact info
     try {
       const contact = await api.contacts.get(this.jid);
       if (contact) {
@@ -110,12 +109,10 @@ export class ChatView extends LitElement {
       this.contactName = this.jid;
     }
 
-    // Open/get chatbox
     try {
       this.chatbox = await api.chats.open(this.jid, {}, true);
       if (!this.chatbox) return;
 
-      // Wait for messages to be fetched from cache/MAM
       if (this.chatbox.messages?.fetched) {
         await this.chatbox.messages.fetched;
       }
@@ -124,12 +121,9 @@ export class ChatView extends LitElement {
       this.loading = false;
       this.scrollToBottom();
 
-      // Listen for new messages
       const addHandler = () => {
         this.loadMessages();
-        if (this.autoScroll) {
-          this.scrollToBottom();
-        }
+        if (this.autoScroll) this.scrollToBottom();
       };
       this.chatbox.messages.on('add', addHandler);
       this.chatbox.messages.on('change', addHandler);
@@ -138,13 +132,11 @@ export class ChatView extends LitElement {
         this.chatbox?.messages?.off('change', addHandler);
       });
 
-      // Track OMEMO state
       this.cleanups.push(trackOmemo(this.chatbox, (active, supported) => {
         this.omemoActive = active;
         this.omemoSupported = supported;
       }));
 
-      // Listen for typing indicators from them
       const notifHandler = () => {
         const notif = this.chatbox?.notifications;
         this.theirChatState = notif?.get('chat_state') || '';
@@ -188,19 +180,17 @@ export class ChatView extends LitElement {
       })
       .sort((a: MessageInfo, b: MessageInfo) => a.timeISO.localeCompare(b.timeISO));
 
-    // Trigger async decryption for any aesgcm URLs not yet cached
     for (const msg of this.messages) {
       if (isAesgcmUrl(msg.body) && !this.decryptedCache.has(msg.body)) {
-        this.decryptedCache.set(msg.body, null); // mark as in-progress
+        this.decryptedCache.set(msg.body, null);
         decryptAesgcmUrl(msg.body).then((blobUrl) => {
           this.decryptedCache.set(msg.body, blobUrl);
-          this.requestUpdate(); // re-render with decrypted content
+          this.requestUpdate();
         });
       }
     }
   }
 
-  /** Fetch older messages from the MAM archive */
   private async fetchOlderMessages() {
     if (this.loadingOlder || this.allHistoryLoaded || !this.chatbox) return;
 
@@ -209,7 +199,6 @@ export class ChatView extends LitElement {
 
     this.loadingOlder = true;
 
-    // Remember scroll position to restore after loading
     const el = this.messagesEl;
     const prevScrollHeight = el?.scrollHeight || 0;
 
@@ -227,17 +216,14 @@ export class ChatView extends LitElement {
       if (!result || !result.messages || result.messages.length === 0) {
         this.allHistoryLoaded = true;
       } else {
-        // Messages are automatically added to chatbox.messages by Converse.js
         this.loadMessages();
       }
     } catch (err) {
       console.error('Failed to fetch older messages:', err);
-      // Don't mark as all loaded — could be a transient error
     }
 
     this.loadingOlder = false;
 
-    // Restore scroll position so the view doesn't jump
     requestAnimationFrame(() => {
       if (el) {
         const newScrollHeight = el.scrollHeight;
@@ -245,7 +231,6 @@ export class ChatView extends LitElement {
       }
     });
   }
-
 
   private scrollToBottom() {
     requestAnimationFrame(() => {
@@ -260,7 +245,6 @@ export class ChatView extends LitElement {
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     this.autoScroll = scrollHeight - scrollTop - clientHeight < 50;
 
-    // Load older messages when scrolling near the top
     if (scrollTop < 80 && !this.loadingOlder && !this.allHistoryLoaded) {
       this.fetchOlderMessages();
     }
@@ -396,7 +380,8 @@ export class ChatView extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #f8fafc;
+      background: var(--color-bg);
+      position: relative;
     }
 
     .header {
@@ -404,8 +389,8 @@ export class ChatView extends LitElement {
       align-items: center;
       gap: 0.75rem;
       padding: 0.875rem 1rem;
-      background: white;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--color-bg-card);
+      border-bottom: 1px solid var(--color-border);
       flex-shrink: 0;
     }
 
@@ -413,11 +398,12 @@ export class ChatView extends LitElement {
       display: none;
       background: none;
       border: none;
-      color: #3b82f6;
+      color: var(--color-primary);
       font-size: 1.25rem;
       cursor: pointer;
       padding: 0.25rem;
       line-height: 1;
+      border-radius: 0.25rem;
     }
 
     @media (max-width: 768px) {
@@ -428,13 +414,13 @@ export class ChatView extends LitElement {
       width: 2.25rem;
       height: 2.25rem;
       border-radius: 50%;
-      background: #e2e8f0;
+      background: var(--color-avatar-bg-light);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.75rem;
       font-weight: 600;
-      color: #64748b;
+      color: var(--color-avatar-text-light);
       flex-shrink: 0;
     }
 
@@ -443,7 +429,7 @@ export class ChatView extends LitElement {
     .header-name {
       font-size: 0.9375rem;
       font-weight: 600;
-      color: #0f172a;
+      color: var(--color-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -464,23 +450,17 @@ export class ChatView extends LitElement {
 
     .omemo-btn {
       background: none;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border);
       border-radius: 0.375rem;
       padding: 0.25rem 0.5rem;
       cursor: pointer;
       font-size: 0.875rem;
-      transition: all 0.12s;
+      transition: all var(--duration-fast);
       flex-shrink: 0;
     }
 
-    .omemo-btn:hover {
-      background: #f1f5f9;
-    }
-
-    .omemo-btn.active {
-      border-color: #22c55e;
-      background: #f0fdf4;
-    }
+    .omemo-btn:hover { background: var(--color-bg); }
+    .omemo-btn.active { border-color: var(--color-success); background: var(--color-success-bg); }
 
     /* Messages */
     .messages {
@@ -504,13 +484,13 @@ export class ChatView extends LitElement {
       content: '';
       flex: 1;
       height: 1px;
-      background: #e2e8f0;
+      background: var(--color-border);
     }
 
     .date-label {
       font-size: 0.6875rem;
       font-weight: 500;
-      color: #94a3b8;
+      color: var(--color-text-muted);
       text-transform: uppercase;
       letter-spacing: 0.025em;
       white-space: nowrap;
@@ -525,8 +505,8 @@ export class ChatView extends LitElement {
       display: inline-block;
       width: 1.25rem;
       height: 1.25rem;
-      border: 2px solid #e2e8f0;
-      border-top-color: #3b82f6;
+      border: 2px solid var(--color-border);
+      border-top-color: var(--color-primary);
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
     }
@@ -534,7 +514,7 @@ export class ChatView extends LitElement {
     .history-end {
       text-align: center;
       font-size: 0.75rem;
-      color: #cbd5e1;
+      color: var(--color-text-muted);
       padding: 0.5rem;
     }
 
@@ -547,27 +527,33 @@ export class ChatView extends LitElement {
       word-wrap: break-word;
       overflow-wrap: break-word;
       position: relative;
+      animation: msgIn 0.2s ease-out;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .msg.me {
       align-self: flex-end;
-      background: #2563eb;
-      color: white;
+      background: var(--color-msg-me);
+      color: var(--color-msg-me-text);
       border-bottom-right-radius: 0.25rem;
     }
 
     .msg.them {
       align-self: flex-start;
-      background: white;
-      color: #0f172a;
+      background: var(--color-msg-them);
+      color: var(--color-msg-them-text);
       border-bottom-left-radius: 0.25rem;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      box-shadow: var(--shadow-msg);
     }
 
     .msg.error {
-      background: #fef2f2;
-      color: #dc2626;
-      border: 1px solid #fecaca;
+      background: var(--color-error-bg);
+      color: var(--color-error);
+      border: 1px solid var(--color-error-border);
     }
 
     .msg-meta {
@@ -584,18 +570,63 @@ export class ChatView extends LitElement {
     .typing-indicator {
       align-self: flex-start;
       padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       font-size: 0.8125rem;
-      color: #64748b;
-      font-style: italic;
+      color: var(--color-text-secondary);
     }
 
-    .loading, .empty-chat {
+    .typing-dots {
+      display: flex;
+      gap: 3px;
+    }
+
+    .typing-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--color-text-muted);
+      animation: bounce-dot 1.4s ease-in-out infinite;
+    }
+
+    .typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+    @keyframes bounce-dot {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+
+    .loading {
       display: flex;
       align-items: center;
       justify-content: center;
       flex: 1;
-      color: #94a3b8;
+    }
+
+    .empty-chat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      color: var(--color-text-muted);
+      text-align: center;
+      padding: 2rem;
+      gap: 0.75rem;
+    }
+
+    .empty-chat svg { opacity: 0.3; }
+
+    .empty-chat p {
+      margin: 0;
       font-size: 0.875rem;
+    }
+
+    .empty-chat .subtitle {
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
     }
 
     /* Input */
@@ -604,14 +635,14 @@ export class ChatView extends LitElement {
       align-items: flex-end;
       gap: 0.5rem;
       padding: 0.75rem 1rem;
-      background: white;
-      border-top: 1px solid #e2e8f0;
+      background: var(--color-bg-card);
+      border-top: 1px solid var(--color-border);
       flex-shrink: 0;
     }
 
     .input-bar textarea {
       flex: 1;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border);
       border-radius: 1.25rem;
       padding: 0.5rem 0.875rem;
       font-size: 0.875rem;
@@ -620,13 +651,14 @@ export class ChatView extends LitElement {
       outline: none;
       max-height: 120px;
       line-height: 1.4;
-      color: #0f172a;
-      background: #f8fafc;
+      color: var(--color-text);
+      background: var(--color-bg-input);
+      transition: border-color var(--duration-fast), background var(--duration-fast);
     }
 
     .input-bar textarea:focus {
-      border-color: #3b82f6;
-      background: white;
+      border-color: var(--color-border-focus);
+      background: var(--color-bg-card);
     }
 
     .send-btn {
@@ -634,18 +666,20 @@ export class ChatView extends LitElement {
       height: 2.25rem;
       border: none;
       border-radius: 50%;
-      background: #2563eb;
+      background: var(--color-primary);
       color: white;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: background 0.12s;
+      transition: background var(--duration-fast), transform var(--duration-fast);
     }
 
-    .send-btn:hover { background: #1d4ed8; }
-    .send-btn:disabled { background: #cbd5e1; cursor: default; }
+    .send-btn:hover { background: var(--color-primary-hover); }
+    .send-btn:active { transform: scale(0.93); }
+    .send-btn:disabled { background: var(--color-text-muted); cursor: default; }
+    .send-btn:disabled:active { transform: none; }
     .send-btn svg { width: 1.125rem; height: 1.125rem; }
 
     .attach-btn {
@@ -654,56 +688,57 @@ export class ChatView extends LitElement {
       border: none;
       border-radius: 50%;
       background: none;
-      color: #64748b;
+      color: var(--color-text-secondary);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: color 0.12s;
+      transition: color var(--duration-fast), transform var(--duration-fast);
     }
 
-    .attach-btn:hover { color: #2563eb; }
-    .attach-btn:disabled { color: #cbd5e1; cursor: default; }
+    .attach-btn:hover { color: var(--color-primary); }
+    .attach-btn:active { transform: scale(0.93); }
+    .attach-btn:disabled { color: var(--color-text-muted); cursor: default; }
     .attach-btn svg { width: 1.25rem; height: 1.25rem; }
 
     .upload-bar {
       padding: 0.25rem 1rem 0.5rem;
-      background: white;
+      background: var(--color-bg-card);
     }
 
     .upload-progress {
       height: 3px;
-      background: #e2e8f0;
+      background: var(--color-border);
       border-radius: 2px;
       overflow: hidden;
     }
 
     .upload-progress-fill {
       height: 100%;
-      background: #2563eb;
+      background: var(--color-primary);
       transition: width 0.15s;
     }
 
     .upload-error {
       font-size: 0.75rem;
-      color: #dc2626;
+      color: var(--color-error);
       padding: 0.25rem 1rem;
-      background: #fef2f2;
+      background: var(--color-error-bg);
     }
 
     .drag-overlay {
       position: absolute;
       inset: 0;
       background: rgba(37, 99, 235, 0.08);
-      border: 2px dashed #2563eb;
+      border: 2px dashed var(--color-primary);
       border-radius: 0.5rem;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.875rem;
       font-weight: 500;
-      color: #2563eb;
+      color: var(--color-primary);
       z-index: 10;
       pointer-events: none;
     }
@@ -737,10 +772,6 @@ export class ChatView extends LitElement {
 
     .msg-file-link:hover { text-decoration: underline; }
 
-    :host {
-      position: relative;
-    }
-
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -749,17 +780,14 @@ export class ChatView extends LitElement {
   private renderMessageBody(msg: MessageInfo) {
     const body = msg.body.trim();
 
-    // Handle aesgcm:// encrypted file URLs
     if (isAesgcmUrl(body)) {
       const blobUrl = msg.decryptedUrl;
       if (blobUrl === undefined || blobUrl === null) {
-        // Still decrypting or failed
         return html`<div class="msg-file-link">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
           ${blobUrl === null ? 'Decrypting...' : 'Encrypted file'}
         </div>`;
       }
-      // Decrypted — check if image by original URL extension
       if (isImageUrl(body)) {
         return html`<img class="msg-image" src="${blobUrl}" alt="encrypted image" loading="lazy"
           @click=${() => window.open(blobUrl, '_blank')} />`;
@@ -772,7 +800,6 @@ export class ChatView extends LitElement {
       </a>`;
     }
 
-    // Handle regular https:// URLs
     try {
       const url = new URL(body);
       if (url.protocol === 'http:' || url.protocol === 'https:') {
@@ -796,7 +823,7 @@ export class ChatView extends LitElement {
       <div class=${cls}>
         ${this.renderMessageBody(msg)}
         <div class="msg-meta">
-          ${msg.isEncrypted ? html`<span title="Encrypted">🔒</span>` : nothing}
+          ${msg.isEncrypted ? html`<span title="Encrypted">&#x1F512;</span>` : nothing}
           ${msg.isEdited ? html`<span>edited</span>` : nothing}
           <span>${msg.time}</span>
         </div>
@@ -832,7 +859,7 @@ export class ChatView extends LitElement {
 
     return html`
       <div class="header">
-        <button class="back-btn" @click=${this.handleBack}>←</button>
+        <button class="back-btn" @click=${this.handleBack} aria-label="Go back">&larr;</button>
         <div class="header-avatar">${initials}</div>
         <div class="header-info">
           <div class="header-name">${this.contactName}</div>
@@ -845,18 +872,20 @@ export class ChatView extends LitElement {
           class="omemo-btn ${this.omemoActive ? 'active' : ''}"
           @click=${this.toggleOmemo}
           title="${this.omemoActive ? 'OMEMO encryption enabled' : 'OMEMO encryption disabled'}"
+          aria-label="${this.omemoActive ? 'Disable OMEMO' : 'Enable OMEMO'}"
         >
-          ${this.omemoActive ? '🔒' : '🔓'}
+          ${this.omemoActive ? '\u{1F512}' : '\u{1F513}'}
         </button>
       </div>
 
       ${this.dragOver ? html`<div class="drag-overlay">Drop file to upload</div>` : nothing}
 
       ${this.loading
-        ? html`<div class="loading">Loading messages...</div>`
+        ? html`<div class="loading"><skeleton-loader rows="5" variant="message"></skeleton-loader></div>`
         : html`
             <div class="messages" @scroll=${this.handleScroll}
-              @dragover=${this.handleDragOver} @dragleave=${this.handleDragLeave} @drop=${this.handleDrop}>
+              @dragover=${this.handleDragOver} @dragleave=${this.handleDragLeave} @drop=${this.handleDrop}
+              role="log" aria-label="Messages">
               ${this.allHistoryLoaded
                 ? html`<div class="history-end">Beginning of conversation</div>`
                 : nothing}
@@ -864,10 +893,19 @@ export class ChatView extends LitElement {
                 ? html`<div class="load-more"><span class="load-more-spinner"></span></div>`
                 : nothing}
               ${this.messages.length === 0
-                ? html`<div class="empty-chat">No messages yet. Say hello!</div>`
+                ? html`<div class="empty-chat">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <p>No messages yet</p>
+                    <p class="subtitle">Send a message to start the conversation</p>
+                  </div>`
                 : this.renderMessages()}
               ${this.theirChatState === 'composing'
-                ? html`<div class="typing-indicator">${this.contactName} is typing...</div>`
+                ? html`<div class="typing-indicator">
+                    <div class="typing-dots"><span></span><span></span><span></span></div>
+                    ${this.contactName} is typing
+                  </div>`
                 : nothing}
             </div>
           `}
@@ -883,7 +921,7 @@ export class ChatView extends LitElement {
 
       <input type="file" id="file-input" hidden @change=${this.handleFileSelect} />
       <div class="input-bar">
-        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading} title="Attach file">
+        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading} title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
           </svg>
@@ -895,12 +933,14 @@ export class ChatView extends LitElement {
           @input=${this.handleInput}
           @keydown=${this.handleKeyDown}
           @paste=${this.handlePaste}
+          aria-label="Message input"
         ></textarea>
         <button
           class="send-btn"
           @click=${this.sendMessage}
           ?disabled=${!this.inputText.trim()}
           title="Send"
+          aria-label="Send message"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"></line>

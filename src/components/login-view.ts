@@ -59,32 +59,38 @@ export class LoginView extends LitElement {
     }
 
     .card {
-      background: white;
+      background: var(--color-bg-card, #fff);
       border-radius: 1rem;
       padding: 2.5rem;
       width: 100%;
       max-width: 400px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--shadow-card);
+      animation: cardIn 0.3s ease-out;
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(16px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     h1 {
       margin: 0 0 0.25rem;
       font-size: 1.5rem;
       font-weight: 700;
-      color: #0f172a;
+      color: var(--color-text, #0f172a);
     }
 
     .subtitle {
       margin: 0 0 2rem;
       font-size: 0.875rem;
-      color: #64748b;
+      color: var(--color-text-secondary, #64748b);
     }
 
     label {
       display: block;
       font-size: 0.875rem;
       font-weight: 500;
-      color: #334155;
+      color: var(--color-text-secondary, #334155);
       margin-bottom: 0.375rem;
     }
 
@@ -92,11 +98,11 @@ export class LoginView extends LitElement {
       display: block;
       width: 100%;
       padding: 0.625rem 0.875rem;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--color-border, #e2e8f0);
       border-radius: 0.5rem;
       font-size: 0.9375rem;
-      color: #0f172a;
-      background: #f8fafc;
+      color: var(--color-text, #0f172a);
+      background: var(--color-bg-input, #f8fafc);
       outline: none;
       transition: border-color 0.15s, box-shadow 0.15s;
       box-sizing: border-box;
@@ -104,48 +110,61 @@ export class LoginView extends LitElement {
     }
 
     input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-      background: white;
+      border-color: var(--color-border-focus, #3b82f6);
+      box-shadow: 0 0 0 3px var(--color-focus-ring, rgba(59, 130, 246, 0.15));
+      background: var(--color-bg-card, #fff);
     }
 
-    button {
+    button[type="submit"] {
       display: block;
       width: 100%;
       padding: 0.75rem;
-      background: #2563eb;
-      color: white;
+      background: var(--color-primary, #2563eb);
+      color: var(--color-primary-text, #fff);
       border: none;
       border-radius: 0.5rem;
       font-size: 0.9375rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, transform var(--duration-fast, 0.12s);
       margin-top: 0.5rem;
     }
 
-    button:hover:not(:disabled) {
-      background: #1d4ed8;
+    button[type="submit"]:hover:not(:disabled) {
+      background: var(--color-primary-hover, #1d4ed8);
     }
 
-    button:disabled {
+    button[type="submit"]:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    button[type="submit"]:disabled {
       opacity: 0.6;
       cursor: not-allowed;
     }
 
     .error {
-      background: #fef2f2;
-      color: #dc2626;
+      background: var(--color-error-bg, #fef2f2);
+      color: var(--color-error, #dc2626);
       padding: 0.75rem;
       border-radius: 0.5rem;
       font-size: 0.8125rem;
       margin-bottom: 1rem;
+      animation: shakeX 0.4s ease-out;
+    }
+
+    @keyframes shakeX {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(6px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(4px); }
     }
 
     .status {
       text-align: center;
       font-size: 0.8125rem;
-      color: #64748b;
+      color: var(--color-text-secondary, #64748b);
       margin-top: 1rem;
     }
 
@@ -153,8 +172,8 @@ export class LoginView extends LitElement {
       display: inline-block;
       width: 1rem;
       height: 1rem;
-      border: 2px solid #e2e8f0;
-      border-top-color: #3b82f6;
+      border: 2px solid var(--color-border, #e2e8f0);
+      border-top-color: var(--color-primary, #3b82f6);
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
       vertical-align: middle;
@@ -172,7 +191,7 @@ export class LoginView extends LitElement {
         <h1>XMPP Chat</h1>
         <p class="subtitle">Sign in with your XMPP account</p>
 
-        ${this.error ? html`<div class="error">${this.error}</div>` : ''}
+        ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : ''}
 
         <form @submit=${this.handleSubmit}>
           <label for="jid">JID (user@server.com)</label>
@@ -185,6 +204,7 @@ export class LoginView extends LitElement {
             ?disabled=${this.loading}
             autocomplete="username"
             required
+            aria-required="true"
           />
 
           <label for="password">Password</label>
@@ -197,6 +217,7 @@ export class LoginView extends LitElement {
             ?disabled=${this.loading}
             autocomplete="current-password"
             required
+            aria-required="true"
           />
 
           <button type="submit" ?disabled=${this.loading}>
@@ -205,7 +226,7 @@ export class LoginView extends LitElement {
         </form>
 
         ${this.loading ? html`
-          <div class="status">
+          <div class="status" role="status" aria-live="polite">
             <span class="spinner"></span>
             ${this.status === 'connecting' ? 'Connecting to server...' :
               this.status === 'authenticating' ? 'Authenticating...' :
