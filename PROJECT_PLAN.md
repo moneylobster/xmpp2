@@ -1,0 +1,132 @@
+# XMPP Client Project Plan
+## Converse.js-based, Mobile-ready, Modern UI
+
+---
+
+## Phase 1: Project Scaffolding & Core Setup ✅
+- [x] Initialize TypeScript project with Vite
+- [x] Set up tsconfig
+- [x] Install Converse.js and dependencies
+- [x] Set up basic project structure (src/xmpp, src/components, src/types, src/styles)
+- [x] Choose and set up UI framework: Lit
+- [x] Configure CSS: Tailwind CSS v3 + PostCSS
+- [x] Converse.js integration: using UMD dist build (avoids ESM webpack chunk issues)
+- [x] Bridge plugin (xmpp2-bridge) for connection events
+- [x] Login view with JID/password form
+- [x] App shell with sidebar + main panel layout
+- [x] Connection state management via custom EventBus
+
+## Phase 2: Connection & Authentication ✅ (handled by Converse.js)
+- [x] .well-known/host-meta discovery (XEP-0156) — built into Converse.js
+- [x] WebSocket connection with auto-reconnect — built into Converse.js
+- [x] SASL authentication — built into Converse.js
+- [x] Stream management (XEP-0198) — converse-smacks plugin
+- [x] Connection status UI (connecting, connected, error, reconnecting)
+
+## Phase 3: Core Chat — 1:1 Messaging ✅
+- [x] Roster management (contact list with presence, search, unread badges)
+- [x] 1:1 chat view with message input and message bubbles
+- [x] Real-time message send/receive
+- [x] Message carbons (XEP-0280) — handled by Converse.js
+- [x] Chat state notifications (typing indicators, XEP-0085)
+- [x] Responsive mobile layout (stacked views with back navigation)
+- [ ] Delivery receipts (XEP-0184) — deferred to polish phase
+- [ ] Read markers — deferred to polish phase
+
+## Phase 4: Message Archive & History (MAM) ✅
+- [x] MAM queries (XEP-0313) — handled by Converse.js automatically on chat open
+- [x] Infinite scroll / lazy loading of older history (scroll to top triggers fetch)
+- [x] Local message cache in IndexedDB — handled by Converse.js (persistent_store)
+- [x] Sync strategy — Converse.js fetches from server, merges with local cache
+- [x] Date separators between message groups (Today, Yesterday, dates)
+- [x] Scroll position preserved when loading older messages
+- [ ] Search through message history — deferred to polish phase
+
+## Phase 5: OMEMO Encryption ✅
+- [x] Load libsignal (bundled with Converse.js) for OMEMO support
+- [x] Configure Converse.js for OMEMO (trusted: true, clear_cache_on_logout: false)
+- [x] Per-conversation encryption toggle (lock icon in chat header)
+- [x] Encrypted message indicators in chat view (🔒 on messages)
+- [ ] Key management UI (fingerprints, trust) — deferred to polish phase
+- [ ] Device management — deferred to polish phase
+
+## Phase 6: Group Chats (MUC) ✅
+- [x] Room list in sidebar with unread badges
+- [x] Join room dialog (room JID + nickname)
+- [x] MUC chat view with sender nicknames (color-coded)
+- [x] Occupant/member list panel (toggle in header)
+- [x] Role/affiliation indicators (owner/admin/moderator icons)
+- [x] MUC message history via MAM (automatic via Converse.js)
+- [x] Date separators in room messages
+- [ ] Room configuration UI — deferred
+- [ ] Room discovery and bookmarks — deferred
+
+## Phase 7: File Uploads ✅
+- [x] HTTP File Upload (XEP-0363)
+- [x] Upload progress indicator
+- [x] Image/file preview in chat (thumbnails, file info)
+- [x] Drag-and-drop and paste-to-upload
+- [x] File size limits and type validation
+- [x] Integration with OMEMO (encrypt before upload, aesgcm:// URL decryption & preview)
+
+## Phase 8: Modern UI & UX
+- [ ] Design system: typography, colors, spacing, dark/light mode
+- [ ] Responsive layout: sidebar + chat panel (desktop), stacked views (mobile)
+- [ ] Chat bubble design with timestamps, status icons, avatars
+- [ ] Contact/room list with search, unread badges, presence dots
+- [ ] Smooth transitions and animations
+- [ ] Empty states, loading skeletons
+- [ ] Notification badges and sounds
+- [ ] Settings screen (account, appearance, encryption, notifications)
+- [ ] Accessibility (keyboard nav, screen reader, contrast)
+
+## Phase 9: Capacitor Integration (Mobile)
+- [ ] Add Capacitor to the project
+- [ ] Configure iOS and Android projects
+- [ ] Push notifications (via XMPP push, XEP-0357)
+- [ ] Background connection handling
+- [ ] Native file picker for uploads
+- [ ] Haptic feedback
+- [ ] App icon and splash screen
+- [ ] Test on physical devices
+
+## Phase 10: Polish & Reliability
+- [ ] Comprehensive error handling throughout
+- [ ] Offline mode: queue messages, show status
+- [ ] Unit tests for core logic (connection, MAM, OMEMO)
+- [ ] Integration tests with a test XMPP server
+- [ ] Performance profiling (large chat histories, many contacts)
+- [ ] Bundle optimization and code splitting
+
+---
+
+## Key Technical Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| XMPP Library | Converse.js + Strophe.js | Mature, well-tested, extensible |
+| UI Framework | Lit | Lightweight, web-standard, Converse.js compatible |
+| Styling | Tailwind CSS | Rapid prototyping, mobile-first, consistent design |
+| Build Tool | Vite | Fast dev, good TS support, clean builds |
+| Local Storage | IndexedDB | Large capacity, async, good for message archives |
+| Mobile | Capacitor | Web-first with native access when needed |
+| State Mgmt | Minimal (event-driven) | Keep simple; Converse.js already manages XMPP state |
+
+## XEPs Required
+
+- XEP-0156: Discovering Alternative XMPP Connection Methods (.well-known)
+- XEP-0198: Stream Management (reliable delivery, resume)
+- XEP-0280: Message Carbons (multi-device sync)
+- XEP-0313: Message Archive Management (history)
+- XEP-0384: OMEMO Encryption
+- XEP-0045: Multi-User Chat
+- XEP-0048/0402: Bookmarks
+- XEP-0363: HTTP File Upload
+- XEP-0085: Chat State Notifications
+- XEP-0184: Message Delivery Receipts
+- XEP-0357: Push Notifications (for mobile)
+
+## Out of Scope
+- Voice/video calls (Jingle)
+- Server administration
+- Account registration (use existing accounts)
