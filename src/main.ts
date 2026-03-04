@@ -5,7 +5,7 @@ import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from '@/xmpp/events';
 import type { ConnectionStatus } from '@/types';
 
 import './utils/theme';
-import { initCapacitor } from './utils/capacitor';
+import { hideSplashScreen, initCapacitor } from './utils/capacitor';
 import './components/login-view';
 import './components/app-shell';
 
@@ -18,6 +18,7 @@ export class XmppApp extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     await initClient();
+    hideSplashScreen();
 
     this.cleanup.push(
       events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {

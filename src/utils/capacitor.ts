@@ -1,14 +1,18 @@
 import { isNative, isAndroid } from './platform';
 import { getApi } from '@/xmpp/client';
 
-export async function initCapacitor() {
+/** Call early on app startup to show the login screen */
+export async function hideSplashScreen() {
   if (!isNative()) return;
-
-  // Hide splash screen
   try {
     const { SplashScreen } = await import('@capacitor/splash-screen');
     await SplashScreen.hide();
   } catch { /* ignore */ }
+}
+
+/** Call after XMPP connection is established */
+export async function initCapacitor() {
+  if (!isNative()) return;
 
   // Configure status bar
   try {
