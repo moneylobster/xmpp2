@@ -1,7 +1,13 @@
 name: Build iOS
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -20,19 +26,33 @@ jobs:
       - run: npx cap add ios
       - run: npx cap sync ios
 
-      - name: Build for simulator (unsigned)
+      - name: Build unsigned app for device
         run: |
-          xcodebuild build \
+          xcodebuild archive \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            -destination 'generic/platform=iOS' \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r build/App.xcarchive/Products/Applications/App.app build/Payload/
+          VERSION=${GITHUB_REF_NAME:-dev}
+          cd build && zip -r ../xmpp-chat-${VERSION}.ipa Payload
+
       - uses: actions/upload-artifact@v4
         with:
-          name: App.app
-          path: build/Build/Products/Debug-iphonesimulator/App.app
+          name: App.ipa
+          path: xmpp-chat-*.ipa
+
+      - name: Create or update release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: xmpp-chat-*.ipa
+          generate_release_notes: true
