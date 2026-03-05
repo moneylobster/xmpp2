@@ -26,6 +26,10 @@ jobs:
       - run: npx cap add ios
       - run: npx cap sync ios
 
+      - name: Install CocoaPods dependencies
+        working-directory: ios/App
+        run: pod install
+
       - name: Build unsigned app for device
         run: |
           xcodebuild archive \
