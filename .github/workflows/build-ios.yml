@@ -27,8 +27,13 @@ jobs:
       - run: npx cap sync ios
 
       - name: Install CocoaPods dependencies
-        working-directory: ios/App
-        run: pod install
+        run: |
+          if [ -f ios/App/Podfile ]; then
+            cd ios/App && pod install
+          fi
+
+      - name: Debug workspace
+        run: find ios -name "*.xcworkspace" -o -name "*.xcodeproj" | head -20
 
       - name: Build unsigned app for device
         run: |
