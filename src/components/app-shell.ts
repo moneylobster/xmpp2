@@ -46,6 +46,20 @@ export class AppShell extends LitElement {
       })
     );
 
+    // Android back button: navigate back from chat/settings to contact list
+    const backHandler = (e: Event) => {
+      if (this.mobileShowChat) {
+        e.preventDefault();
+        if (this.viewMode === 'settings') {
+          this.handleSettingsBack();
+        } else {
+          this.handleBack();
+        }
+      }
+    };
+    window.addEventListener('app-back-button', backHandler);
+    this.cleanups.push(() => window.removeEventListener('app-back-button', backHandler));
+
     // Track unread messages for tab badge + sound
     if (api) {
       const msgHandler = () => setTimeout(() => this.updateUnreadCount(), 200);

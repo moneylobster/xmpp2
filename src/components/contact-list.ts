@@ -2,17 +2,16 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
-import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface ContactInfo {
   jid: string;
   name: string;
   presence: string;
-  show: string | null;
   status: string;
   numUnread: number;
   subscription: string;
+  lastMessage: string;
 }
 
 @customElement('contact-list')
@@ -72,23 +71,47 @@ export class ContactList extends LitElement {
       }
 
       const list = Array.isArray(rosterContacts) ? rosterContacts : [rosterContacts];
+
+      // Pre-fetch last messages for all contacts
+      const lastMessages = new Map<string, string>();
+      try {
+        const chats = await api.chats.get();
+        const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
+        for (const chat of chatList) {
+          const jid = chat.get('jid');
+          const lastMsg = chat.messages?.last?.();
+          if (lastMsg) {
+            const body = lastMsg.get('body');
+            if (body) {
+              const sender = lastMsg.get('sender') === 'me' ? 'You: ' : '';
+              lastMessages.set(jid, sender + body);
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
       this.contacts = list
         .filter((c: any) => {
           const sub = c.get('subscription');
           return sub === 'both' || sub === 'to' || sub === 'from';
         })
-        .map((c: any) => ({
-          jid: c.get('jid'),
-          name: c.getDisplayName() || c.get('jid'),
-          presence: c.get('presence') || 'offline',
-          show: c.get('show') || null,
-          status: c.get('status') || '',
-          numUnread: c.get('num_unread') || 0,
-          subscription: c.get('subscription') || 'none',
-        }))
+        .map((c: any) => {
+          const jid = c.get('jid');
+          // Use getStatus() which correctly reads from the presence model
+          const presence = c.getStatus?.() || c.presence?.getStatus?.() || 'offline';
+          return {
+            jid,
+            name: c.getDisplayName() || jid,
+            presence,
+            status: c.get('status') || '',
+            numUnread: c.get('num_unread') || 0,
+            subscription: c.get('subscription') || 'none',
+            lastMessage: lastMessages.get(jid) || '',
+          };
+        })
         .sort((a: ContactInfo, b: ContactInfo) => {
-          const aOnline = a.presence === 'online' ? 0 : 1;
-          const bOnline = b.presence === 'online' ? 0 : 1;
+          const aOnline = a.presence !== 'offline' ? 0 : 1;
+          const bOnline = b.presence !== 'offline' ? 0 : 1;
           if (aOnline !== bOnline) return aOnline - bOnline;
           return a.name.localeCompare(b.name);
         });
@@ -106,7 +129,6 @@ export class ContactList extends LitElement {
   }
 
   private selectContact(jid: string) {
-    hapticLight();
     this.dispatchEvent(
       new CustomEvent('contact-selected', { detail: { jid }, bubbles: true, composed: true }),
     );
@@ -120,21 +142,25 @@ export class ContactList extends LitElement {
   }
 
   private presenceColor(contact: ContactInfo): string {
-    if (contact.presence !== 'online') return '#94a3b8';
-    switch (contact.show) {
+    switch (contact.presence) {
+      case 'online':
+      case 'chat':
+        return '#22c55e';
       case 'away':
       case 'xa':
         return '#f59e0b';
       case 'dnd':
         return '#ef4444';
       default:
-        return '#22c55e';
+        return '#94a3b8';
     }
   }
 
   private presenceLabel(contact: ContactInfo): string {
-    if (contact.presence !== 'online') return 'Offline';
-    switch (contact.show) {
+    switch (contact.presence) {
+      case 'online':
+      case 'chat':
+        return 'Online';
       case 'away':
         return 'Away';
       case 'xa':
@@ -142,7 +168,7 @@ export class ContactList extends LitElement {
       case 'dnd':
         return 'Do not disturb';
       default:
-        return 'Online';
+        return 'Offline';
     }
   }
 
@@ -364,14 +390,14 @@ export class ContactList extends LitElement {
                   <div class="avatar">
                     ${this.initials(c.name)}
                     <span
-                      class="presence-dot ${c.presence === 'online' && !c.show ? 'online' : ''}"
+                      class="presence-dot ${c.presence === 'online' || c.presence === 'chat' ? 'online' : ''}"
                       style="background: ${this.presenceColor(c)}"
                     ></span>
                   </div>
                   <div class="info">
                     <div class="name">${c.name}</div>
                     <div class="status-text">
-                      ${c.status || this.presenceLabel(c)}
+                      ${c.lastMessage || c.status || this.presenceLabel(c)}
                     </div>
                   </div>
                   ${c.numUnread > 0 ? html`<span class="badge">${c.numUnread}</span>` : nothing}

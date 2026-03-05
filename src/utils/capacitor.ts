@@ -1,5 +1,6 @@
 import { isNative, isAndroid } from './platform';
 import { getApi } from '@/xmpp/client';
+import { initPushNotifications } from './push';
 
 /** Call early on app startup to show the login screen */
 export async function hideSplashScreen() {
@@ -40,17 +41,24 @@ export async function initCapacitor() {
       }
     });
 
-    // Android back button
+    // Android back button — dispatch custom event so app-shell can handle navigation
     if (isAndroid()) {
-      App.addListener('backButton', ({ canGoBack }) => {
-        if (canGoBack) {
-          window.history.back();
-        } else {
+      App.addListener('backButton', () => {
+        const handled = window.dispatchEvent(
+          new CustomEvent('app-back-button', { cancelable: true })
+        );
+        // If no handler cancelled the event, minimize the app
+        if (handled) {
           App.minimizeApp();
         }
       });
     }
   } catch { /* ignore */ }
+
+  // Initialize push notifications
+  try {
+    await initPushNotifications();
+  } catch { /* ignore - push not available */ }
 
   // Keyboard handling
   try {

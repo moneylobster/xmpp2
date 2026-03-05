@@ -31,7 +31,6 @@ export class ChatView extends LitElement {
   @state() private inputText = '';
   @state() private contactName = '';
   @state() private contactPresence = 'offline';
-  @state() private contactShow: string | null = null;
   @state() private theirChatState = '';
   @state() private loading = true;
   @state() private loadingOlder = false;
@@ -90,18 +89,14 @@ export class ChatView extends LitElement {
       const contact = await api.contacts.get(this.jid);
       if (contact) {
         this.contactName = contact.getDisplayName() || this.jid;
-        this.contactPresence = contact.get('presence') || 'offline';
-        this.contactShow = contact.get('show') || null;
+        this.contactPresence = contact.getStatus?.() || contact.presence?.getStatus?.() || 'offline';
 
         const presHandler = () => {
-          this.contactPresence = contact.get('presence') || 'offline';
-          this.contactShow = contact.get('show') || null;
+          this.contactPresence = contact.getStatus?.() || contact.presence?.getStatus?.() || 'offline';
         };
-        contact.on('change:presence', presHandler);
-        contact.on('change:show', presHandler);
+        contact.on('presence:change', presHandler);
         this.cleanups.push(() => {
-          contact.off('change:presence', presHandler);
-          contact.off('change:show', presHandler);
+          contact.off('presence:change', presHandler);
         });
       } else {
         this.contactName = this.jid;
@@ -118,6 +113,11 @@ export class ChatView extends LitElement {
         await this.chatbox.messages.fetched;
       }
 
+      // Clear unread count when chat is opened
+      if (this.chatbox.get('num_unread') > 0) {
+        this.chatbox.set('num_unread', 0);
+      }
+
       this.loadMessages();
       this.loading = false;
       this.scrollToBottom();
@@ -125,6 +125,10 @@ export class ChatView extends LitElement {
       const addHandler = () => {
         this.loadMessages();
         if (this.autoScroll) this.scrollToBottom();
+        // Clear unread since user is viewing this chat
+        if (this.chatbox?.get('num_unread') > 0) {
+          this.chatbox.set('num_unread', 0);
+        }
       };
       this.chatbox.messages.on('add', addHandler);
       this.chatbox.messages.on('change', addHandler);
@@ -359,21 +363,21 @@ export class ChatView extends LitElement {
   }
 
   private get presenceText(): string {
-    if (this.contactPresence !== 'online') return 'Offline';
-    switch (this.contactShow) {
+    switch (this.contactPresence) {
+      case 'online': case 'chat': return 'Online';
       case 'away': return 'Away';
       case 'xa': return 'Extended away';
       case 'dnd': return 'Do not disturb';
-      default: return 'Online';
+      default: return 'Offline';
     }
   }
 
   private get presenceColor(): string {
-    if (this.contactPresence !== 'online') return '#94a3b8';
-    switch (this.contactShow) {
+    switch (this.contactPresence) {
+      case 'online': case 'chat': return '#22c55e';
       case 'away': case 'xa': return '#f59e0b';
       case 'dnd': return '#ef4444';
-      default: return '#22c55e';
+      default: return '#94a3b8';
     }
   }
 
