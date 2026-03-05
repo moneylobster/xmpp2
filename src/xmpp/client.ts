@@ -110,6 +110,53 @@ export async function login(config: XMPPConfig): Promise<void> {
 }
 
 /**
+ * Attempt auto-login using stored SCRAM keys (no credentials needed).
+ * Returns true if login succeeded, false otherwise.
+ */
+export async function tryAutoLogin(): Promise<boolean> {
+  setStatus('connecting');
+  await loadLibsignal();
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const settle = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    // Timeout after 10s
+    const timer = setTimeout(() => settle(false), 10000);
+
+    // Listen for success/failure
+    const onConnected = () => { clearTimeout(timer); settle(true); };
+    const onDisconnected = () => { clearTimeout(timer); settle(false); };
+
+    events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
+      if (status === 'connected') onConnected();
+      else if (status === 'disconnected' || status === 'error') onDisconnected();
+    });
+
+    const converse = getConverse();
+    converse.initialize({
+      authentication: 'login',
+      auto_login: true,
+      auto_reconnect: true,
+      discover_connection_methods: true,
+      persistent_store: 'IndexedDB',
+      clear_cache_on_logout: false,
+      loglevel: 'info',
+      whitelisted_plugins: ['xmpp2-bridge'],
+      keepalive: true,
+      reuse_scram_keys: true,
+      allow_non_roster_messaging: true,
+      trusted: true,
+      omemo_default: false,
+    }).catch(() => { clearTimeout(timer); settle(false); });
+  });
+}
+
+/**
  * Log out and disconnect.
  */
 export async function logout(): Promise<void> {
@@ -118,6 +165,7 @@ export async function logout(): Promise<void> {
   } catch {
     // Ignore errors during logout
   }
+  localStorage.removeItem('conversejs-session-jid');
   setStatus('disconnected');
 }
 
