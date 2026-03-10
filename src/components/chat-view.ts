@@ -76,6 +76,7 @@ export class ChatView extends LitElement {
     this.theirChatState = '';
     this.allHistoryLoaded = false;
     this.loadingOlder = false;
+    this.restoringScroll = false;
     this.omemoActive = false;
     this.omemoSupported = false;
   }
@@ -196,6 +197,8 @@ export class ChatView extends LitElement {
     }
   }
 
+  private restoringScroll = false;
+
   private async fetchOlderMessages() {
     if (this.loadingOlder || this.allHistoryLoaded || !this.chatbox) return;
 
@@ -203,9 +206,6 @@ export class ChatView extends LitElement {
     if (!api) return;
 
     this.loadingOlder = true;
-
-    const el = this.messagesEl;
-    const prevScrollHeight = el?.scrollHeight || 0;
 
     try {
       const oldest = this.chatbox.getOldestMessage?.();
@@ -227,14 +227,20 @@ export class ChatView extends LitElement {
       console.error('Failed to fetch older messages:', err);
     }
 
+    // Capture scroll height before re-render removes spinner
+    const el = this.messagesEl;
+    const prevScrollHeight = el?.scrollHeight || 0;
+
     this.loadingOlder = false;
 
-    requestAnimationFrame(() => {
-      if (el) {
-        const newScrollHeight = el.scrollHeight;
-        el.scrollTop = newScrollHeight - prevScrollHeight;
-      }
-    });
+    // Wait for Lit to re-render, then restore scroll position
+    await this.updateComplete;
+    if (el) {
+      this.restoringScroll = true;
+      el.scrollTop = el.scrollHeight - prevScrollHeight;
+      // Allow handleScroll to work again after a tick
+      requestAnimationFrame(() => { this.restoringScroll = false; });
+    }
   }
 
   private scrollToBottom() {
@@ -246,7 +252,7 @@ export class ChatView extends LitElement {
   }
 
   private handleScroll() {
-    if (!this.messagesEl) return;
+    if (!this.messagesEl || this.restoringScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     this.autoScroll = scrollHeight - scrollTop - clientHeight < 50;
 
