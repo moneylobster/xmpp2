@@ -168,9 +168,20 @@ export async function tryAutoLogin(): Promise<boolean> {
  * Log out and disconnect.
  */
 export async function logout(): Promise<void> {
+  // Disable push before disconnecting — with timeout so logout isn't blocked
   try {
-    await disablePushOnServer();
+    await Promise.race([
+      disablePushOnServer(),
+      new Promise((r) => setTimeout(r, 3000)),
+    ]);
   } catch { /* best effort */ }
+
+  // Also delete the FCM token so the server can't push to this device anymore
+  try {
+    const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+    await FirebaseMessaging.deleteToken();
+  } catch { /* not native or not available */ }
+
   try {
     await _api?.user?.logout();
   } catch {

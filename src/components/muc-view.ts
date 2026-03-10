@@ -95,23 +95,21 @@ export class MucView extends LitElement {
       if (!this.muc) return;
 
       // Wait for room to be fully joined on the server
-      if (this.muc.session?.get('connection_status') !== 5) {
-        // 5 = ROOMSTATUS.ENTERED in converse
+      if (this.muc.occupants?.length === 0) {
         try {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Room join timeout')), 15000);
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 10000);
             const check = () => {
-              if (this.muc?.session?.get('connection_status') === 5) {
+              if (this.muc?.occupants?.length > 0) {
                 clearTimeout(timeout);
+                this.muc?.occupants?.off('add', check);
                 resolve();
               }
             };
+            this.muc.occupants?.on('add', check);
             check();
-            this.muc.session?.on('change:connection_status', check);
           });
-        } catch (err) {
-          console.warn('Room join wait:', err);
-        }
+        } catch { /* proceed anyway */ }
       }
 
       this.roomName = this.muc.get('name') || this.jid.split('@')[0];
