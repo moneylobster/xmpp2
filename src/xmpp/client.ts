@@ -59,11 +59,16 @@ export async function initClient(): Promise<void> {
       _converse_ref = (this as any)._converse;
       _api = _converse_ref.api;
 
-      _api.listen.on('connected', () => setStatus('connected'));
-      _api.listen.on('reconnected', () => setStatus('connected'));
-      _api.listen.on('disconnected', () => setStatus('disconnected'));
-      _api.listen.on('will-reconnect', () => setStatus('reconnecting'));
+      _api.listen.on('connected', () => { console.info('[XMPP] connected'); setStatus('connected'); });
+      _api.listen.on('reconnected', () => { console.info('[XMPP] reconnected'); setStatus('connected'); });
+      _api.listen.on('disconnected', () => {
+        const conn = _api.connection?.get?.();
+        console.warn('[XMPP] disconnected', conn ? `status=${conn.status}, reason=${conn.condition || 'none'}` : 'no connection');
+        setStatus('disconnected');
+      });
+      _api.listen.on('will-reconnect', () => { console.info('[XMPP] will-reconnect'); setStatus('reconnecting'); });
       _api.listen.on('logout', () => {
+        console.info('[XMPP] logout');
         setStatus('disconnected');
         events.emit(LOGGED_OUT);
       });

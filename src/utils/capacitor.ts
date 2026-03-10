@@ -36,10 +36,13 @@ export async function initCapacitor() {
       if (isActive) {
         // Only reconnect if actually disconnected
         const conn = api.connection.get();
+        console.info('[XMPP] appResume', conn ? `connected=${conn.connected}, status=${conn.status}` : 'no connection');
         if (conn && !conn.connected) {
           try {
             await api.connection.reconnect();
-          } catch { /* already connected or reconnecting */ }
+          } catch (err) {
+            console.warn('[XMPP] reconnect failed on resume', err);
+          }
         }
       }
     });
