@@ -171,8 +171,12 @@ export async function initPushNotifications() {
   });
 
   // Re-enable push on reconnect (server may clear registrations)
+  // Only re-enable if push was previously enabled and got cleared by a disconnect
   events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
-    if (status === 'connected' && fcmToken && pushServerJid) {
+    if (status === 'disconnected') {
+      pushEnabled = false;
+    }
+    if (status === 'connected' && !pushEnabled && fcmToken && pushServerJid) {
       enablePushOnServer(fcmToken);
     }
   });
@@ -187,10 +191,13 @@ async function handlePushWakeUp(_notification: any) {
   const api = getApi();
   if (!api) return;
 
-  // Reconnect to XMPP to fetch pending messages
-  try {
-    await api.connection.reconnect();
-  } catch { /* already connected */ }
+  // Only reconnect if actually disconnected — never tear down a live connection
+  const conn = api.connection.get?.();
+  if (conn && !conn.connected) {
+    try {
+      await api.connection.reconnect();
+    } catch { /* already reconnecting */ }
+  }
 
   // On Android, show a local notification with message content
   // (iOS handles display via the notification payload / Notification Service Extension)
