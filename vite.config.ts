@@ -15,5 +15,10 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      // @capacitor-firebase/messaging imports firebase/messaging for web support.
+      // We only use push on native platforms, so stub the web dependency.
+      external: ['firebase/messaging'],
+    },
   },
 });

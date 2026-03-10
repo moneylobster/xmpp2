@@ -1,18 +1,22 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
+import { getPushServerJid, setPushServerJid } from '@/utils/push';
 
 const SOUND_KEY = 'xmpp-notification-sound';
+const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
 
 @customElement('settings-view')
 export class SettingsView extends LitElement {
   @state() private theme: ThemePreference = 'auto';
   @state() private soundEnabled = true;
+  @state() private pushServerJid = '';
 
   connectedCallback() {
     super.connectedCallback();
     this.theme = getThemePreference();
     this.soundEnabled = localStorage.getItem(SOUND_KEY) !== 'false';
+    this.pushServerJid = localStorage.getItem(PUSH_SERVER_KEY) || '';
   }
 
   private setTheme(t: ThemePreference) {
@@ -23,6 +27,12 @@ export class SettingsView extends LitElement {
   private toggleSound() {
     this.soundEnabled = !this.soundEnabled;
     localStorage.setItem(SOUND_KEY, String(this.soundEnabled));
+  }
+
+  private handlePushServerChange(e: Event) {
+    const value = (e.target as HTMLInputElement).value.trim();
+    this.pushServerJid = value;
+    setPushServerJid(value);
   }
 
   private handleBack() {
@@ -172,6 +182,42 @@ export class SettingsView extends LitElement {
       transform: translateX(1.25rem);
     }
 
+    .input-row {
+      padding: 0.75rem 0;
+    }
+
+    .text-input {
+      display: block;
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      margin-top: 0.5rem;
+      border: 1px solid var(--color-border, #e2e8f0);
+      border-radius: 0.5rem;
+      font-size: 0.8125rem;
+      color: var(--color-text, #0f172a);
+      background: var(--color-bg-input, #f8fafc);
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .text-input:focus {
+      border-color: var(--color-border-focus, #3b82f6);
+      box-shadow: 0 0 0 3px var(--color-focus-ring, rgba(59, 130, 246, 0.15));
+    }
+
+    .push-status {
+      margin-top: 0.375rem;
+      font-size: 0.75rem;
+    }
+
+    .push-status.connected {
+      color: var(--color-success, #16a34a);
+    }
+
+    .push-status.disconnected {
+      color: var(--color-text-secondary, #64748b);
+    }
+
     .about {
       padding: 1rem;
       background: var(--color-bg-input, #f8fafc);
@@ -240,6 +286,22 @@ export class SettingsView extends LitElement {
               aria-checked=${this.soundEnabled}
               aria-label="Notification sound"
             ></button>
+          </div>
+          <div class="input-row">
+            <label for="push-server" class="toggle-label">Push notification server</label>
+            <div class="toggle-desc">Auto-detected as push.DOMAIN. Override only if needed.</div>
+            <input
+              id="push-server"
+              type="text"
+              class="text-input"
+              placeholder="push.example.com (auto-detect)"
+              .value=${this.pushServerJid}
+              @change=${this.handlePushServerChange}
+            />
+            ${getPushServerJid()
+              ? html`<div class="push-status connected">Active: ${getPushServerJid()}</div>`
+              : html`<div class="push-status disconnected">No push server found</div>`
+            }
           </div>
         </div>
 

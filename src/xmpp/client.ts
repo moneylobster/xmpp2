@@ -1,5 +1,6 @@
 import type { ConnectionStatus, XMPPConfig } from '@/types';
 import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from './events';
+import { disablePushOnServer } from '@/utils/push';
 
 // Import headless-only build — no UI plugins, just XMPP protocol handling
 import 'converse.js';
@@ -160,6 +161,9 @@ export async function tryAutoLogin(): Promise<boolean> {
  * Log out and disconnect.
  */
 export async function logout(): Promise<void> {
+  try {
+    await disablePushOnServer();
+  } catch { /* best effort */ }
   try {
     await _api?.user?.logout();
   } catch {

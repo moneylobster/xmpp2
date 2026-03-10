@@ -47,8 +47,9 @@ export async function initCapacitor() {
         const handled = window.dispatchEvent(
           new CustomEvent('app-back-button', { cancelable: true })
         );
+        // dispatchEvent returns false if preventDefault() was called
         // If no handler cancelled the event, minimize the app
-        if (handled) {
+        if (!handled) {
           App.minimizeApp();
         }
       });

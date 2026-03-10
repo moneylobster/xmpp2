@@ -147,3 +147,19 @@
 - Voice/video calls (Jingle)
 - Server administration
 - Account registration (use existing accounts)
+
+## Other stuff
+  ┌────────────────────────────────┬──────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐
+  │                                │               Android                │                                  iOS                                  │
+  ├────────────────────────────────┼──────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+  │ Firebase config file           │ google-services.json in android/app/ │ GoogleService-Info.plist in ios/App/App/                              │
+  ├────────────────────────────────┼──────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+  │ Firebase Console               │ Add Android app (com.xmpp2.app)      │ Upload APNs .p8 key under Cloud Messaging                             │
+  ├────────────────────────────────┼──────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+  │ Xcode                          │ N/A                                  │ Enable Push Notifications + Background Modes capabilities             │
+  ├────────────────────────────────┼──────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+  │ Notification Service Extension │ N/A                                  │ Future: native Swift extension for decrypting message content in push │
+  └────────────────────────────────┴──────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
+
+  The iOS Notification Service Extension (for showing decrypted message content in notifications without opening the app) requires native Swift code in the Xcode project — that's a separate step. For now, iOS
+   will show whatever the push app server puts in the FCM notification payload.

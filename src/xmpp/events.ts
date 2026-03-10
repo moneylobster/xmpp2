@@ -23,3 +23,4 @@ export const events = new EventBus();
 // Event names
 export const CONNECTION_STATUS_CHANGED = 'connection:status';
 export const LOGGED_OUT = 'auth:logout';
+export const PUSH_SERVER_NOT_FOUND = 'push:server-not-found';

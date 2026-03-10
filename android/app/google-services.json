@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "734573131580",
+    "project_id": "xmpp-df992",
+    "storage_bucket": "xmpp-df992.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:734573131580:android:149809c01ed514bfb01039",
+        "android_client_info": {
+          "package_name": "com.xmpp2.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1hTy0IqJAcxwtFpD1XnLZb0PwMW3ZL9c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
