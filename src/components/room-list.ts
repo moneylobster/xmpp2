@@ -28,6 +28,12 @@ export class RoomList extends LitElement {
     this.initRooms();
   }
 
+  willUpdate(changed: Map<string, unknown>) {
+    if (changed.has('selectedJid') && !this.loading) {
+      this.loadRooms();
+    }
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
     this.cleanups.forEach((fn) => fn());

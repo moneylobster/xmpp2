@@ -29,6 +29,13 @@ export class ContactList extends LitElement {
     this.initRoster();
   }
 
+  willUpdate(changed: Map<string, unknown>) {
+    // Refresh when selection changes (e.g. navigating back from a chat clears unread)
+    if (changed.has('selectedJid') && !this.loading) {
+      this.loadContacts();
+    }
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
     this.cleanups.forEach((fn) => fn());
