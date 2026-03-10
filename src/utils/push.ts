@@ -158,9 +158,27 @@ export async function initPushNotifications() {
     }
   });
 
-  // Push received while app is in foreground — no action needed, already connected
-  FirebaseMessaging.addListener('notificationReceived', (_notification: any) => {
-    console.log('[Push] Push received (foreground, ignored)');
+  // Push received while app is in foreground or background (process alive)
+  // Replace the generic FCM notification with one containing actual message content
+  FirebaseMessaging.addListener('notificationReceived', async (notification: any) => {
+    console.log('[Push] Push received (process alive)');
+
+    // Remove the generic FCM notification so we can replace it
+    try {
+      if (notification?.notification?.id) {
+        await FirebaseMessaging.removeDeliveredNotifications({
+          notifications: [{ id: notification.notification.id }],
+        });
+      } else {
+        await FirebaseMessaging.removeAllDeliveredNotifications();
+      }
+    } catch {
+      // Best effort — some versions may not support this
+    }
+
+    // Wait briefly for the XMPP message to arrive via the live connection
+    await new Promise((r) => setTimeout(r, 1500));
+    await showLocalNotificationForNewMessages();
   });
 
   // User tapped a notification
@@ -261,7 +279,7 @@ export async function showLocalNotificationForNewMessages() {
       notifications: [{
         title,
         body,
-        id: Date.now(),
+        id: 1, // Stable ID so new messages replace the previous notification
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
       }],
