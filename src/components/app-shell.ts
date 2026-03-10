@@ -134,7 +134,7 @@ export class AppShell extends LitElement {
     switch (this.theme) {
       case 'light': return '\u2600'; // ☀
       case 'dark': return '\u263E';  // ☾
-      default: return '\u2699';      // ⚙ (auto)
+      default: return '\u1F313';      // 🌓 (auto)
     }
   }
 
