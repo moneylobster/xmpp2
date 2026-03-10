@@ -33,6 +33,10 @@ export class SettingsView extends LitElement {
 
   private handlePushServerChange(e: Event) {
     const value = (e.target as HTMLInputElement).value.trim();
+    // Allow empty (clears override, reverts to auto-discovery) or validate JID format
+    if (value && !/^[a-zA-Z0-9._-]+(\.[a-zA-Z0-9._-]+)+$/.test(value)) {
+      return; // Reject malformed JID/domain
+    }
     this.pushServerJid = value;
     setPushServerJid(value);
   }

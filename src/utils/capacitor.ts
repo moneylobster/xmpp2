@@ -1,6 +1,6 @@
 import { isNative, isAndroid } from './platform';
 import { getApi } from '@/xmpp/client';
-import { initPushNotifications, showLocalNotificationForNewMessages } from './push';
+import { initPushNotifications } from './push';
 
 /** Call early on app startup to show the login screen */
 export async function hideSplashScreen() {
@@ -11,9 +11,13 @@ export async function hideSplashScreen() {
   } catch { /* ignore */ }
 }
 
+let capacitorInitialized = false;
+
 /** Call after XMPP connection is established */
 export async function initCapacitor() {
   if (!isNative()) return;
+  if (capacitorInitialized) return;
+  capacitorInitialized = true;
 
   // Configure status bar
   try {
@@ -42,10 +46,6 @@ export async function initCapacitor() {
             await api.connection.reconnect();
           } catch (err) {
             console.warn('[XMPP] reconnect failed on resume', err);
-          }
-          // After reconnect, show notifications for any messages received while backgrounded
-          if (isAndroid()) {
-            await showLocalNotificationForNewMessages();
           }
         }
       }

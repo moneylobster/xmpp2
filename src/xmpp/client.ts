@@ -132,17 +132,14 @@ export async function tryAutoLogin(): Promise<boolean> {
       resolve(result);
     };
 
-    // Timeout after 10s
-    const timer = setTimeout(() => settle(false), 10000);
-
     // Listen for success/failure
-    const onConnected = () => { clearTimeout(timer); cleanup(); settle(true); };
-    const onDisconnected = () => { clearTimeout(timer); cleanup(); settle(false); };
-
     const cleanup = events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
-      if (status === 'connected') onConnected();
-      else if (status === 'disconnected' || status === 'error') onDisconnected();
+      if (status === 'connected') { clearTimeout(timer); cleanup(); settle(true); }
+      else if (status === 'disconnected' || status === 'error') { clearTimeout(timer); cleanup(); settle(false); }
     });
+
+    // Timeout after 10s
+    const timer = setTimeout(() => { cleanup(); settle(false); }, 10000);
 
     const converse = getConverse();
     converse.initialize({
@@ -160,7 +157,7 @@ export async function tryAutoLogin(): Promise<boolean> {
       allow_non_roster_messaging: true,
       trusted: true,
       omemo_default: false,
-    }).catch(() => { clearTimeout(timer); settle(false); });
+    }).catch(() => { clearTimeout(timer); cleanup(); settle(false); });
   });
 }
 

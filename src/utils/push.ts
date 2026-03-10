@@ -10,13 +10,13 @@ import type { ConnectionStatus } from '@/types';
  * FCM proxies to APNs on iOS, so the push app server only talks to FCM.
  *
  * Android flow:
- *   1. FCM data message wakes app (content-free)
- *   2. App reconnects to XMPP, fetches new messages
- *   3. App displays local notification with decrypted message content
+ *   1. FCM notification message arrives with generic "You have a new message"
+ *   2. OS displays notification natively (no JS needed)
+ *   3. When app opens, it reconnects to XMPP and fetches pending messages
  *
  * iOS flow:
- *   1. FCM notification message delivered via APNs (may contain encrypted summary)
- *   2. Notification Service Extension can decrypt and display (requires native code)
+ *   1. FCM notification message delivered via APNs
+ *   2. OS displays notification natively
  *   3. When app opens, it reconnects and fetches full message history
  *
  * Server-side requirements:
@@ -101,6 +101,8 @@ export function setPushServerJid(jid: string) {
 
 let fcmToken: string | null = null;
 let pushEnabled = false;
+let pushInitialized = false;
+let reconnectCleanup: (() => void) | null = null;
 
 /**
  * Initialize push notifications on native platforms.
@@ -108,6 +110,8 @@ let pushEnabled = false;
  */
 export async function initPushNotifications() {
   if (!isNative()) return;
+  if (pushInitialized) return;
+  pushInitialized = true;
 
   let FirebaseMessaging: any;
   try {
@@ -158,32 +162,26 @@ export async function initPushNotifications() {
     }
   });
 
-  // Push received while app is in foreground or background (process alive)
-  // Replace the generic FCM notification with one containing actual message content
+  // Push received while app is in foreground — suppress it, user is already in-app
   FirebaseMessaging.addListener('notificationReceived', async (notification: any) => {
-    console.log('[Push] notificationReceived fired:', JSON.stringify(notification));
-
-    // Remove the generic FCM notification so we can replace it
+    console.log('[Push] Push received (foreground, suppressed)');
     try {
       await FirebaseMessaging.removeAllDeliveredNotifications();
-      console.log('[Push] Cleared delivered notifications');
-    } catch (err) {
-      console.warn('[Push] Failed to clear notifications:', err);
-    }
-
-    // Wait briefly for the XMPP message to arrive via the live connection
-    await new Promise((r) => setTimeout(r, 1500));
-    await showLocalNotificationForNewMessages();
+    } catch { /* best effort */ }
   });
 
-  // User tapped a notification
-  FirebaseMessaging.addListener('notificationActionPerformed', (event: any) => {
-    console.log('[Push] notificationActionPerformed fired:', JSON.stringify(event));
+  // User tapped a notification — clear it and let the app handle navigation
+  FirebaseMessaging.addListener('notificationActionPerformed', async (_event: any) => {
+    console.log('[Push] Notification tapped');
+    try {
+      await FirebaseMessaging.removeAllDeliveredNotifications();
+    } catch { /* best effort */ }
   });
 
   // Re-enable push on reconnect (server may clear registrations)
   // Only re-enable if push was previously enabled and got cleared by a disconnect
-  events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
+  reconnectCleanup?.();
+  reconnectCleanup = events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
     if (status === 'disconnected') {
       pushEnabled = false;
     }
@@ -193,101 +191,6 @@ export async function initPushNotifications() {
   });
 }
 
-/**
- * Handle an incoming push notification.
- * On Android: reconnect XMPP, fetch messages, show local notification.
- * On iOS: the notification is already displayed by the OS/Notification Service Extension.
- */
-async function handlePushWakeUp(_notification: any) {
-  const api = getApi();
-  if (!api) return;
-
-  // Only reconnect if actually disconnected — never tear down a live connection
-  const conn = api.connection.get?.();
-  if (conn && !conn.connected) {
-    try {
-      await api.connection.reconnect();
-    } catch { /* already reconnecting */ }
-  }
-
-  // On Android, show a local notification with message content
-  // (iOS handles display via the notification payload / Notification Service Extension)
-  if (isAndroid()) {
-    await showLocalNotificationForNewMessages();
-  }
-}
-
-/**
- * Fetch recent unread messages and display a local notification.
- * Called on Android after a push wake-up triggers a reconnect.
- */
-export async function showLocalNotificationForNewMessages() {
-  const api = getApi();
-  if (!api) return;
-
-  // Wait briefly for messages to arrive via XMPP
-  await new Promise((r) => setTimeout(r, 2000));
-
-  try {
-    const chats = await api.chats.get();
-    const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
-
-    // Find the most recent incoming message across all chats
-    let newestTime = 0;
-    let lastSender = '';
-    let lastBody = '';
-    let totalUnread = 0;
-
-    for (const chat of chatList) {
-      totalUnread += chat.get?.('num_unread') || 0;
-
-      const messages = chat.messages;
-      if (!messages?.length) continue;
-
-      const last = messages.last?.() || messages.at?.(-1);
-      if (!last || last.get?.('sender') === 'me') continue;
-
-      const time = new Date(last.get?.('time') || 0).getTime();
-      if (time > newestTime) {
-        newestTime = time;
-        lastSender = last.get?.('nickname') || last.get?.('from')?.split('/')[0]?.split('@')[0] || '';
-        lastBody = last.get?.('plaintext') || last.get?.('body') || '';
-      }
-    }
-
-    // Only show if there's a recent message (within last 30 seconds)
-    if (!lastBody || (Date.now() - newestTime) > 30000) {
-      console.log(`[Push] No recent message to notify (newest=${newestTime}, unread=${totalUnread})`);
-      return;
-    }
-
-    let LocalNotifications: any;
-    try {
-      const mod = await import('@capacitor/local-notifications');
-      LocalNotifications = mod.LocalNotifications;
-    } catch {
-      return;
-    }
-
-    const title = totalUnread > 1
-      ? `${lastSender} (+${totalUnread - 1} more)`
-      : lastSender;
-
-    console.log(`[Push] Showing local notification: ${title} — ${lastBody}`);
-
-    await LocalNotifications.schedule({
-      notifications: [{
-        title,
-        body: lastBody,
-        id: 1, // Stable ID so new messages replace the previous notification
-        smallIcon: 'ic_notification',
-        largeIcon: 'ic_launcher',
-      }],
-    });
-  } catch (err) {
-    console.warn('[Push] Failed to show local notification:', err);
-  }
-}
 
 /**
  * Send XEP-0357 <enable> IQ to register for push on the XMPP server.

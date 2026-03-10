@@ -27,8 +27,13 @@ export function validateFile(file: File): FileValidation {
   return { valid: true };
 }
 
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+
 export function isImageFile(file: File): boolean {
-  return ALLOWED_IMAGE_TYPES.includes(file.type);
+  if (ALLOWED_IMAGE_TYPES.includes(file.type)) return true;
+  // Fallback: check extension (file.type can be empty or spoofed)
+  const ext = file.name.toLowerCase().split('.').pop();
+  return ext ? IMAGE_EXTENSIONS.includes(`.${ext}`) : false;
 }
 
 export function isImageUrl(url: string): boolean {
@@ -82,8 +87,17 @@ export async function decryptAesgcmUrl(aesgcmUrl: string): Promise<string | null
     // Download the encrypted file via HTTPS (without the fragment)
     // Can't use url.origin because unknown protocols return "null"
     const httpsUrl = `https://${url.host}${url.pathname}${url.search}`;
-    const response = await fetch(httpsUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch(httpsUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!response.ok) return null;
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > MAX_FILE_SIZE) return null;
     const cipher = await response.arrayBuffer();
 
     // Decrypt

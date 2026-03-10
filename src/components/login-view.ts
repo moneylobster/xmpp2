@@ -42,6 +42,8 @@ export class LoginView extends LitElement {
 
     try {
       await login({ jid: this.jid, password: this.password });
+      // Clear password from component memory after successful login
+      this.password = '';
     } catch (err: any) {
       this.error = err.message || 'Failed to connect';
       this.loading = false;
