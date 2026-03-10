@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
 import { getPushServerJid, setPushServerJid } from '@/utils/push';
+import './log-viewer';
 
 const SOUND_KEY = 'xmpp-notification-sound';
 const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
@@ -11,6 +12,7 @@ export class SettingsView extends LitElement {
   @state() private theme: ThemePreference = 'auto';
   @state() private soundEnabled = true;
   @state() private pushServerJid = '';
+  @state() private showLogViewer = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -218,6 +220,23 @@ export class SettingsView extends LitElement {
       color: var(--color-text-secondary, #64748b);
     }
 
+    .log-btn {
+      width: 100%;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--color-border, #e2e8f0);
+      border-radius: 0.5rem;
+      background: var(--color-bg-card, #fff);
+      color: var(--color-text, #0f172a);
+      font-size: 0.8125rem;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s;
+    }
+
+    .log-btn:hover {
+      background: var(--color-bg-input, #f1f5f9);
+    }
+
     .about {
       padding: 1rem;
       background: var(--color-bg-input, #f8fafc);
@@ -233,6 +252,10 @@ export class SettingsView extends LitElement {
   `;
 
   render() {
+    if (this.showLogViewer) {
+      return html`<log-viewer @back=${() => this.showLogViewer = false}></log-viewer>`;
+    }
+
     return html`
       <div class="header">
         <button class="back-btn" @click=${this.handleBack} aria-label="Go back">&larr;</button>
@@ -312,6 +335,13 @@ export class SettingsView extends LitElement {
             A modern XMPP client built with Converse.js and Lit.<br>
             Phase 8 — UI &amp; UX Polish
           </div>
+        </div>
+
+        <div class="section">
+          <h3>Developer</h3>
+          <button class="log-btn" @click=${() => this.showLogViewer = true}>
+            Debug Log
+          </button>
         </div>
       </div>
     `;

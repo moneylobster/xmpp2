@@ -5,7 +5,10 @@ import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from '@/xmpp/events';
 import type { ConnectionStatus } from '@/types';
 
 import './utils/theme';
+import { installLogCapture } from './utils/logger';
 import { hideSplashScreen, initCapacitor } from './utils/capacitor';
+
+installLogCapture();
 import './components/login-view';
 import './components/app-shell';
 
