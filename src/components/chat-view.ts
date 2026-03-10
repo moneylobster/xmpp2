@@ -640,7 +640,7 @@ export class ChatView extends LitElement {
       display: flex;
       align-items: flex-end;
       gap: 0.5rem;
-      padding: 0.75rem 1rem;
+      padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
       background: var(--color-bg-card);
       border-top: 1px solid var(--color-border);
       flex-shrink: 0;

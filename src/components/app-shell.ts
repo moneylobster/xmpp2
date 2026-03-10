@@ -316,7 +316,7 @@ export class AppShell extends LitElement {
         top: env(safe-area-inset-top, 0px);
         left: 0;
         right: 0;
-        bottom: env(safe-area-inset-bottom, 0px);
+        bottom: 0;
         z-index: 10;
         animation: slideInRight 0.2s ease-out;
       }
