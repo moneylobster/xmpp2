@@ -161,19 +161,14 @@ export async function initPushNotifications() {
   // Push received while app is in foreground or background (process alive)
   // Replace the generic FCM notification with one containing actual message content
   FirebaseMessaging.addListener('notificationReceived', async (notification: any) => {
-    console.log('[Push] Push received (process alive)');
+    console.log('[Push] notificationReceived fired:', JSON.stringify(notification));
 
     // Remove the generic FCM notification so we can replace it
     try {
-      if (notification?.notification?.id) {
-        await FirebaseMessaging.removeDeliveredNotifications({
-          notifications: [{ id: notification.notification.id }],
-        });
-      } else {
-        await FirebaseMessaging.removeAllDeliveredNotifications();
-      }
-    } catch {
-      // Best effort — some versions may not support this
+      await FirebaseMessaging.removeAllDeliveredNotifications();
+      console.log('[Push] Cleared delivered notifications');
+    } catch (err) {
+      console.warn('[Push] Failed to clear notifications:', err);
     }
 
     // Wait briefly for the XMPP message to arrive via the live connection
@@ -183,8 +178,7 @@ export async function initPushNotifications() {
 
   // User tapped a notification
   FirebaseMessaging.addListener('notificationActionPerformed', (event: any) => {
-    console.log('[Push] Notification tapped');
-    // App is opening — reconnect will happen via appStateChange handler
+    console.log('[Push] notificationActionPerformed fired:', JSON.stringify(event));
   });
 
   // Re-enable push on reconnect (server may clear registrations)
