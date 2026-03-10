@@ -130,10 +130,10 @@ export async function tryAutoLogin(): Promise<boolean> {
     const timer = setTimeout(() => settle(false), 10000);
 
     // Listen for success/failure
-    const onConnected = () => { clearTimeout(timer); settle(true); };
-    const onDisconnected = () => { clearTimeout(timer); settle(false); };
+    const onConnected = () => { clearTimeout(timer); cleanup(); settle(true); };
+    const onDisconnected = () => { clearTimeout(timer); cleanup(); settle(false); };
 
-    events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
+    const cleanup = events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
       if (status === 'connected') onConnected();
       else if (status === 'disconnected' || status === 'error') onDisconnected();
     });

@@ -34,10 +34,13 @@ export async function initCapacitor() {
       if (!api) return;
 
       if (isActive) {
-        // Reconnect if disconnected
-        try {
-          await api.connection.reconnect();
-        } catch { /* already connected */ }
+        // Only reconnect if actually disconnected
+        const conn = api.connection.get();
+        if (conn && !conn.connected) {
+          try {
+            await api.connection.reconnect();
+          } catch { /* already connected or reconnecting */ }
+        }
       }
     });
 
