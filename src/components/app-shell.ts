@@ -103,12 +103,15 @@ export class AppShell extends LitElement {
     this.selection = { type: 'chat', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
+    // Delay to let chat-view clear the unread count first
+    setTimeout(() => this.updateUnreadCount(), 300);
   }
 
   private handleRoomSelected(e: CustomEvent) {
     this.selection = { type: 'room', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
+    setTimeout(() => this.updateUnreadCount(), 300);
   }
 
   private handleBack() {
@@ -117,6 +120,8 @@ export class AppShell extends LitElement {
       this.theme = getThemePreference();
     }
     this.mobileShowChat = false;
+    // Refresh unread counts after leaving a chat (counts were cleared while viewing)
+    this.updateUnreadCount();
   }
 
   private async handleLogout() {

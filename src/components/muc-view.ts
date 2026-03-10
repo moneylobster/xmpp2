@@ -66,7 +66,7 @@ export class MucView extends LitElement {
     this.teardown();
   }
 
-  updated(changed: Map<string, unknown>) {
+  willUpdate(changed: Map<string, unknown>) {
     if (changed.has('jid') && this.jid) {
       this.teardown();
       this.openRoom();
@@ -90,11 +90,29 @@ export class MucView extends LitElement {
     this.loading = true;
 
     try {
-      this.muc = await api.rooms.get(this.jid);
-      if (!this.muc) {
-        this.muc = await api.rooms.open(this.jid);
-      }
+      // Always use open() to ensure the room is joined on the server
+      this.muc = await api.rooms.open(this.jid, {}, true);
       if (!this.muc) return;
+
+      // Wait for room to be fully joined on the server
+      if (this.muc.session?.get('connection_status') !== 5) {
+        // 5 = ROOMSTATUS.ENTERED in converse
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Room join timeout')), 15000);
+            const check = () => {
+              if (this.muc?.session?.get('connection_status') === 5) {
+                clearTimeout(timeout);
+                resolve();
+              }
+            };
+            check();
+            this.muc.session?.on('change:connection_status', check);
+          });
+        } catch (err) {
+          console.warn('Room join wait:', err);
+        }
+      }
 
       this.roomName = this.muc.get('name') || this.jid.split('@')[0];
       this.roomTopic = this.muc.get('subject')?.text || '';
@@ -108,9 +126,18 @@ export class MucView extends LitElement {
       this.loading = false;
       this.scrollToBottom();
 
+      // Clear unread count when room is opened
+      if (this.muc.get('num_unread') > 0) {
+        this.muc.set('num_unread', 0);
+      }
+
       const msgHandler = () => {
         this.loadMessages();
         if (this.autoScroll) this.scrollToBottom();
+        // Clear unread since user is viewing this room
+        if (this.muc?.get('num_unread') > 0) {
+          this.muc.set('num_unread', 0);
+        }
       };
       this.muc.messages.on('add', msgHandler);
       this.muc.messages.on('change', msgHandler);

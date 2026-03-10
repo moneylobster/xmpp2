@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
+import { getMessageBody } from '@/utils/chat-utils';
 import './skeleton-loader';
 
 interface ContactInfo {
@@ -72,16 +73,18 @@ export class ContactList extends LitElement {
 
       const list = Array.isArray(rosterContacts) ? rosterContacts : [rosterContacts];
 
-      // Pre-fetch last messages for all contacts
+      // Pre-fetch last messages and unread counts from chat models
       const lastMessages = new Map<string, string>();
+      const chatUnread = new Map<string, number>();
       try {
         const chats = await api.chats.get();
         const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
         for (const chat of chatList) {
           const jid = chat.get('jid');
+          chatUnread.set(jid, chat.get('num_unread') || 0);
           const lastMsg = chat.messages?.last?.();
           if (lastMsg) {
-            const body = lastMsg.get('body');
+            const body = getMessageBody(lastMsg);
             if (body) {
               const sender = lastMsg.get('sender') === 'me' ? 'You: ' : '';
               lastMessages.set(jid, sender + body);
@@ -104,7 +107,7 @@ export class ContactList extends LitElement {
             name: c.getDisplayName() || jid,
             presence,
             status: c.get('status') || '',
-            numUnread: c.get('num_unread') || 0,
+            numUnread: chatUnread.get(jid) || 0,
             subscription: c.get('subscription') || 'none',
             lastMessage: lastMessages.get(jid) || '',
           };

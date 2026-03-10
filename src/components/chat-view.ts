@@ -60,7 +60,7 @@ export class ChatView extends LitElement {
     this.teardown();
   }
 
-  updated(changed: Map<string, unknown>) {
+  willUpdate(changed: Map<string, unknown>) {
     if (changed.has('jid') && this.jid) {
       this.teardown();
       this.openChat();
