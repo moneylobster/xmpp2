@@ -122,6 +122,7 @@ export class AppShell extends LitElement {
 
   private handleSettingsBack() {
     this.viewMode = 'chat';
+    this.mobileShowChat = false;
     this.theme = getThemePreference();
   }
 
