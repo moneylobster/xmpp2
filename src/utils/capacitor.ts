@@ -42,16 +42,10 @@ export async function initCapacitor() {
     });
 
     // Android back button — dispatch custom event so app-shell can handle navigation
+    // Never close/minimize the app on back button press
     if (isAndroid()) {
       App.addListener('backButton', () => {
-        const handled = window.dispatchEvent(
-          new CustomEvent('app-back-button', { cancelable: true })
-        );
-        // dispatchEvent returns false if preventDefault() was called
-        // If no handler cancelled the event, minimize the app
-        if (!handled) {
-          App.minimizeApp();
-        }
+        window.dispatchEvent(new CustomEvent('app-back-button', { cancelable: true }));
       });
     }
   } catch { /* ignore */ }
