@@ -31,6 +31,9 @@ jobs:
       - run: npx cap add android
       - run: npx cap sync android
 
+      - name: Create google-services.json
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug
