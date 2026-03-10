@@ -225,34 +225,41 @@ export async function showLocalNotificationForNewMessages() {
   const api = getApi();
   if (!api) return;
 
-  // Wait briefly for messages to arrive after reconnect
+  // Wait briefly for messages to arrive via XMPP
   await new Promise((r) => setTimeout(r, 2000));
 
   try {
     const chats = await api.chats.get();
-    if (!chats?.length) return;
+    const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
 
-    let totalUnread = 0;
+    // Find the most recent incoming message across all chats
+    let newestTime = 0;
     let lastSender = '';
     let lastBody = '';
+    let totalUnread = 0;
 
-    for (const chat of chats) {
-      const unread = chat.get?.('num_unread') || 0;
-      if (unread > 0) {
-        totalUnread += unread;
-        // Get the most recent message for the notification body
-        const messages = chat.messages;
-        if (messages?.length) {
-          const last = messages.at(-1);
-          if (last) {
-            lastSender = last.get?.('nickname') || last.get?.('from')?.split('/')[0] || '';
-            lastBody = last.get?.('body') || '';
-          }
-        }
+    for (const chat of chatList) {
+      totalUnread += chat.get?.('num_unread') || 0;
+
+      const messages = chat.messages;
+      if (!messages?.length) continue;
+
+      const last = messages.last?.() || messages.at?.(-1);
+      if (!last || last.get?.('sender') === 'me') continue;
+
+      const time = new Date(last.get?.('time') || 0).getTime();
+      if (time > newestTime) {
+        newestTime = time;
+        lastSender = last.get?.('nickname') || last.get?.('from')?.split('/')[0]?.split('@')[0] || '';
+        lastBody = last.get?.('plaintext') || last.get?.('body') || '';
       }
     }
 
-    if (totalUnread === 0) return;
+    // Only show if there's a recent message (within last 30 seconds)
+    if (!lastBody || (Date.now() - newestTime) > 30000) {
+      console.log(`[Push] No recent message to notify (newest=${newestTime}, unread=${totalUnread})`);
+      return;
+    }
 
     let LocalNotifications: any;
     try {
@@ -262,17 +269,16 @@ export async function showLocalNotificationForNewMessages() {
       return;
     }
 
-    const title = totalUnread === 1
-      ? lastSender
-      : `${totalUnread} new messages`;
-    const body = totalUnread === 1
-      ? lastBody
-      : `${lastSender}: ${lastBody}`;
+    const title = totalUnread > 1
+      ? `${lastSender} (+${totalUnread - 1} more)`
+      : lastSender;
+
+    console.log(`[Push] Showing local notification: ${title} — ${lastBody}`);
 
     await LocalNotifications.schedule({
       notifications: [{
         title,
-        body,
+        body: lastBody,
         id: 1, // Stable ID so new messages replace the previous notification
         smallIcon: 'ic_notification',
         largeIcon: 'ic_launcher',
