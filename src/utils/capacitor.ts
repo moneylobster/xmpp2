@@ -1,6 +1,6 @@
 import { isNative, isAndroid } from './platform';
 import { getApi } from '@/xmpp/client';
-import { initPushNotifications } from './push';
+import { initPushNotifications, showLocalNotificationForNewMessages } from './push';
 
 /** Call early on app startup to show the login screen */
 export async function hideSplashScreen() {
@@ -42,6 +42,10 @@ export async function initCapacitor() {
             await api.connection.reconnect();
           } catch (err) {
             console.warn('[XMPP] reconnect failed on resume', err);
+          }
+          // After reconnect, show notifications for any messages received while backgrounded
+          if (isAndroid()) {
+            await showLocalNotificationForNewMessages();
           }
         }
       }

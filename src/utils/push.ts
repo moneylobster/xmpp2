@@ -158,10 +158,9 @@ export async function initPushNotifications() {
     }
   });
 
-  // Push received while app is in foreground or woken from background
-  FirebaseMessaging.addListener('notificationReceived', async (notification: any) => {
-    console.log('[Push] Push received');
-    await handlePushWakeUp(notification);
+  // Push received while app is in foreground — no action needed, already connected
+  FirebaseMessaging.addListener('notificationReceived', (_notification: any) => {
+    console.log('[Push] Push received (foreground, ignored)');
   });
 
   // User tapped a notification
@@ -210,7 +209,7 @@ async function handlePushWakeUp(_notification: any) {
  * Fetch recent unread messages and display a local notification.
  * Called on Android after a push wake-up triggers a reconnect.
  */
-async function showLocalNotificationForNewMessages() {
+export async function showLocalNotificationForNewMessages() {
   const api = getApi();
   if (!api) return;
 
