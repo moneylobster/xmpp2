@@ -1,6 +1,5 @@
 import { isNative, isAndroid } from './platform';
 import { getApi } from '@/xmpp/client';
-import { initPushNotifications } from './push';
 
 /** Call early on app startup to show the login screen */
 export async function hideSplashScreen() {
@@ -59,11 +58,6 @@ export async function initCapacitor() {
       });
     }
   } catch { /* ignore */ }
-
-  // Initialize push notifications
-  try {
-    await initPushNotifications();
-  } catch { /* ignore - push not available */ }
 
   // Keyboard handling
   try {

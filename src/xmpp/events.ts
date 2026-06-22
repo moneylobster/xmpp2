@@ -14,7 +14,17 @@ class EventBus {
   }
 
   emit(event: string, ...args: any[]): void {
-    this.listeners.get(event)?.forEach((cb) => cb(...args));
+    const subscribers = this.listeners.get(event);
+    if (!subscribers) return;
+    // Snapshot so a listener that (un)subscribes during emit doesn't affect this pass,
+    // and isolate failures so one throwing listener can't break the others.
+    for (const cb of [...subscribers]) {
+      try {
+        cb(...args);
+      } catch (err) {
+        console.error(`[EventBus] listener for "${event}" threw:`, err);
+      }
+    }
   }
 }
 

@@ -70,6 +70,11 @@ export class ChatView extends LitElement {
   private teardown() {
     this.cleanups.forEach((fn) => fn());
     this.cleanups = [];
+    // Revoke decrypted blob URLs so switching chats doesn't leak object URLs.
+    for (const url of this.decryptedCache.values()) {
+      if (url) URL.revokeObjectURL(url);
+    }
+    this.decryptedCache.clear();
     this.chatbox = null;
     this.messages = [];
     this.inputText = '';
@@ -793,7 +798,11 @@ export class ChatView extends LitElement {
     const body = msg.body.trim();
 
     if (isAesgcmUrl(body)) {
-      const blobUrl = msg.decryptedUrl;
+      // Read the live cache (not the snapshot captured when the message list was built),
+      // so the async decrypt's requestUpdate() actually swaps "Decrypting..." for the file.
+      const blobUrl = this.decryptedCache.has(msg.body)
+        ? this.decryptedCache.get(msg.body)
+        : undefined;
       if (blobUrl === undefined || blobUrl === null) {
         return html`<div class="msg-file-link">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>

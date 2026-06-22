@@ -103,6 +103,11 @@ let fcmToken: string | null = null;
 let pushEnabled = false;
 let pushInitialized = false;
 let reconnectCleanup: (() => void) | null = null;
+// Token currently being registered, to dedupe concurrent <enable> sends (e.g. a
+// token refresh racing with the reconnect handler) which would otherwise register twice.
+let enablingToken: string | null = null;
+// Kept so we can remove Firebase listeners when the session is torn down on logout.
+let firebaseRef: any = null;
 
 /**
  * Initialize push notifications on native platforms.
@@ -117,8 +122,10 @@ export async function initPushNotifications() {
   try {
     const mod = await import('@capacitor-firebase/messaging');
     FirebaseMessaging = mod.FirebaseMessaging;
+    firebaseRef = FirebaseMessaging;
   } catch {
     console.warn('[Push] @capacitor-firebase/messaging not available');
+    pushInitialized = false; // allow a retry on the next connect
     return;
   }
 
@@ -197,10 +204,14 @@ export async function initPushNotifications() {
  * Includes the platform so the push app server knows how to format the FCM message.
  */
 async function enablePushOnServer(token: string): Promise<void> {
+  // Dedupe concurrent registrations for the same token (reconnect + tokenReceived race).
+  if (enablingToken === token) return;
+
   const api = getApi();
   const _converse = getConverseInternal();
   if (!api || !_converse) return;
 
+  enablingToken = token;
   try {
     const { $iq } = _converse.env;
 
@@ -232,6 +243,8 @@ async function enablePushOnServer(token: string): Promise<void> {
     console.log(`[Push] XEP-0357 enabled on server (module: ${pushModule})`);
   } catch (err) {
     console.warn('[Push] Failed to enable XEP-0357:', err);
+  } finally {
+    enablingToken = null;
   }
 }
 
@@ -240,7 +253,10 @@ async function enablePushOnServer(token: string): Promise<void> {
  * Call before logout.
  */
 export async function disablePushOnServer(): Promise<void> {
-  if (!pushEnabled || !fcmToken || !pushServerJid) return;
+  // Note: we intentionally don't gate on `pushEnabled` — on logout the app is often
+  // already disconnected (which flips pushEnabled to false), but we still want to send
+  // <disable> so the server stops pushing to this device.
+  if (!fcmToken || !pushServerJid) return;
 
   const api = getApi();
   const _converse = getConverseInternal();
@@ -263,4 +279,27 @@ export async function disablePushOnServer(): Promise<void> {
 /** Get the current FCM token (for debugging/settings display) */
 export function getFcmToken(): string | null {
   return fcmToken;
+}
+
+/**
+ * Tear down all push state on logout so the next login (possibly a different account)
+ * re-initializes cleanly. Without this, `pushInitialized` stays true and push is never
+ * re-registered for the new user, and stale Firebase listeners accumulate.
+ */
+export async function resetPushState(): Promise<void> {
+  reconnectCleanup?.();
+  reconnectCleanup = null;
+
+  if (firebaseRef) {
+    try {
+      await firebaseRef.removeAllListeners();
+    } catch { /* best effort */ }
+  }
+  firebaseRef = null;
+
+  fcmToken = null;
+  pushServerJid = null;
+  pushEnabled = false;
+  enablingToken = null;
+  pushInitialized = false;
 }

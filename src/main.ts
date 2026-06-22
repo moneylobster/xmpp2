@@ -7,6 +7,7 @@ import type { ConnectionStatus } from '@/types';
 import './utils/theme';
 import { installLogCapture } from './utils/logger';
 import { hideSplashScreen, initCapacitor } from './utils/capacitor';
+import { initPushNotifications } from './utils/push';
 
 installLogCapture();
 import './components/login-view';
@@ -26,7 +27,11 @@ export class XmppApp extends LitElement {
       events.on(CONNECTION_STATUS_CHANGED, (status: ConnectionStatus) => {
         if (status === 'connected') {
           this.view = 'app';
+          // One-time native UI/lifecycle setup...
           initCapacitor();
+          // ...but (re)register push every time we connect. It's idempotent via an
+          // internal guard, which logout clears so a new account re-registers.
+          initPushNotifications().catch(() => { /* push not available */ });
         }
       }),
       events.on(LOGGED_OUT, () => {

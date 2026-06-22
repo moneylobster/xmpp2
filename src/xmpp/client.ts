@@ -1,6 +1,6 @@
 import type { ConnectionStatus, XMPPConfig } from '@/types';
 import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from './events';
-import { disablePushOnServer } from '@/utils/push';
+import { disablePushOnServer, resetPushState } from '@/utils/push';
 
 // Import headless-only build — no UI plugins, just XMPP protocol handling
 import 'converse.js';
@@ -184,6 +184,10 @@ export async function logout(): Promise<void> {
   } catch {
     // Ignore errors during logout
   }
+  // Reset push module state so a subsequent login (possibly a different account)
+  // re-registers push from scratch and stale Firebase listeners are removed.
+  await resetPushState();
+
   localStorage.removeItem('conversejs-session-jid');
   setStatus('disconnected');
 }
