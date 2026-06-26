@@ -223,9 +223,19 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  /* Single source of truth for device safe-area insets.
+     Tests can override these on :root to simulate a notched device,
+     since headless browsers report env(safe-area-inset-*) as 0. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 html {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* html owns the safe-area insets. Descendants use height:100% and must
+     NOT re-add insets, otherwise they get counted twice (overflow). */
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
   box-sizing: border-box;
 }
 

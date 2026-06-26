@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { logout, getApi } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
+import { shouldCountUnread, nextUnread } from '@/utils/unread';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
 import './contact-list';
@@ -57,10 +58,29 @@ export class AppShell extends LitElement {
 
     // Track unread messages for tab badge + sound
     if (api) {
-      const msgHandler = () => setTimeout(() => this.updateUnreadCount(), 200);
+      const msgHandler = (data: any) => this.handleIncomingMessage(data);
       api.listen.on('message', msgHandler);
       this.cleanups.push(() => api.listen.not('message', msgHandler));
     }
+  }
+
+  /**
+   * Handle a live incoming message from Converse's global `message` event.
+   * Converse skips counting (num_unread) while the app is foregrounded and the
+   * chat isn't open, so we count it ourselves for that case (see utils/unread).
+   * Then recompute totals, which plays the sound + updates the tab badge, and
+   * which also picks up Converse's own count when the document was hidden.
+   */
+  private handleIncomingMessage(data: any) {
+    try {
+      const chatbox = data?.chatbox;
+      const chatJid = chatbox?.get?.('jid');
+      const activeJid = this.selection?.jid ?? null;
+      if (chatbox && shouldCountUnread(data?.attrs, chatJid, activeJid, document.hidden)) {
+        chatbox.set('num_unread', nextUnread(chatbox.get('num_unread')));
+      }
+    } catch { /* ignore */ }
+    setTimeout(() => this.updateUnreadCount(), 200);
   }
 
   disconnectedCallback() {
@@ -103,7 +123,8 @@ export class AppShell extends LitElement {
     this.selection = { type: 'chat', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
-    // Delay to let chat-view clear the unread count first
+    // Clear unread immediately (covers the race before chat-view mounts), then refresh totals.
+    this.clearUnreadFor(e.detail.jid);
     setTimeout(() => this.updateUnreadCount(), 300);
   }
 
@@ -111,7 +132,20 @@ export class AppShell extends LitElement {
     this.selection = { type: 'room', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
+    this.clearUnreadFor(e.detail.jid);
     setTimeout(() => this.updateUnreadCount(), 300);
+  }
+
+  /** Zero the unread counter for a chat/room so its badge clears on open. */
+  private async clearUnreadFor(jid: string) {
+    const api = getApi();
+    if (!api) return;
+    try {
+      const chatbox = (await api.chats.get(jid)) || (await api.rooms.get(jid));
+      if (chatbox && (chatbox.get('num_unread') || 0) > 0) {
+        chatbox.set('num_unread', 0);
+      }
+    } catch { /* ignore */ }
   }
 
   private handleBack() {
@@ -247,6 +281,8 @@ export class AppShell extends LitElement {
     .rooms-section {
       border-top: 1px solid var(--color-border-sidebar);
       max-height: 40%;
+      min-height: 0;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
     }
@@ -310,11 +346,13 @@ export class AppShell extends LitElement {
       .main { display: none; }
       .main.show-mobile {
         display: flex;
+        /* html already pads top/bottom by the safe-area insets, so this fixed
+           panel must align to that padded box (0/0), not re-offset by the inset. */
         position: fixed;
-        top: env(safe-area-inset-top, 0px);
+        top: var(--safe-top, 0px);
         left: 0;
         right: 0;
-        bottom: 0;
+        bottom: var(--safe-bottom, 0px);
         z-index: 10;
         animation: slideInRight 0.2s ease-out;
       }

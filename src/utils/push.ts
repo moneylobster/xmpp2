@@ -33,6 +33,10 @@ import type { ConnectionStatus } from '@/types';
 
 // -- Configuration --
 const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
+// The push node (FCM token) we last successfully registered with <enable>. Persisted
+// so that after the FCM token rotates — including while the app was closed — we can send
+// <disable> for the old node and stop the server pushing to a now-dead token.
+const ENABLED_NODE_KEY = 'xmpp-push-enabled-node';
 const PUSH_SECRET = ''; // Shared secret with push app server (leave empty if not required)
 
 let pushServerJid: string | null = null;
@@ -158,14 +162,24 @@ export async function initPushNotifications() {
     return;
   }
 
+  const prevNode = localStorage.getItem(ENABLED_NODE_KEY);
   await enablePushOnServer(fcmToken!);
+  // If a previous run registered a different token (the FCM token rotated while the app
+  // was closed), disable that stale node so the server stops pushing to the dead token.
+  if (prevNode && prevNode !== fcmToken) {
+    await disablePushOnServer(prevNode);
+  }
 
-  // Token refresh — re-register with new token
+  // Token refresh — re-register with the new token, then disable the old node.
   FirebaseMessaging.addListener('tokenReceived', async (event: { token: string }) => {
+    const oldToken = fcmToken;
+    if (event.token === oldToken) return;
     console.log('[Push] FCM token refreshed');
     fcmToken = event.token;
     if (pushEnabled) {
+      // Enable the new token first (avoid a notification gap), then disable the old node.
       await enablePushOnServer(fcmToken);
+      if (oldToken) await disablePushOnServer(oldToken);
     }
   });
 
@@ -240,6 +254,7 @@ async function enablePushOnServer(token: string): Promise<void> {
 
     await api.sendIQ(iq);
     pushEnabled = true;
+    localStorage.setItem(ENABLED_NODE_KEY, token);
     console.log(`[Push] XEP-0357 enabled on server (module: ${pushModule})`);
   } catch (err) {
     console.warn('[Push] Failed to enable XEP-0357:', err);
@@ -250,29 +265,38 @@ async function enablePushOnServer(token: string): Promise<void> {
 
 /**
  * Send XEP-0357 <disable> IQ to unregister push on the XMPP server.
- * Call before logout.
+ * Call before logout (no arg → disables the active token), or pass an old token
+ * to clean up a stale registration after the FCM token rotated.
  */
-export async function disablePushOnServer(): Promise<void> {
+export async function disablePushOnServer(token?: string): Promise<void> {
+  const node = token ?? fcmToken;
   // Note: we intentionally don't gate on `pushEnabled` — on logout the app is often
   // already disconnected (which flips pushEnabled to false), but we still want to send
   // <disable> so the server stops pushing to this device.
-  if (!fcmToken || !pushServerJid) return;
+  if (!node || !pushServerJid) return;
 
   const api = getApi();
   const _converse = getConverseInternal();
   if (!api || !_converse) return;
 
+  // Whether we're disabling the currently-active registration (logout) vs. cleaning
+  // up an old, rotated-away token. Only the former should flip push state off.
+  const isActiveNode = !token || token === fcmToken;
+
   try {
     const { $iq } = _converse.env;
 
     const iq = $iq({ type: 'set' })
-      .c('disable', { xmlns: 'urn:xmpp:push:0', jid: pushServerJid!, node: fcmToken });
+      .c('disable', { xmlns: 'urn:xmpp:push:0', jid: pushServerJid!, node });
 
     await api.sendIQ(iq);
-    pushEnabled = false;
-    console.log('[Push] XEP-0357 disabled on server');
+    if (isActiveNode) {
+      pushEnabled = false;
+      localStorage.removeItem(ENABLED_NODE_KEY);
+    }
+    console.log(`[Push] XEP-0357 disabled on server (${isActiveNode ? 'active' : 'stale'} node)`);
   } catch {
-    // Best effort — we're logging out anyway
+    // Best effort
   }
 }
 

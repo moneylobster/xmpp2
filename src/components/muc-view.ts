@@ -604,7 +604,8 @@ export class MucView extends LitElement {
       display: flex;
       align-items: flex-end;
       gap: 0.5rem;
-      padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+      /* Bottom inset is already applied by html's padding-bottom; don't re-add it. */
+      padding: 0.75rem 1rem;
       background: var(--color-bg-card);
       border-top: 1px solid var(--color-border);
       flex-shrink: 0;

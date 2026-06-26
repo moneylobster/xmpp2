@@ -110,10 +110,16 @@
 ## Phase 10: Polish & Reliability
 - [ ] Comprehensive error handling throughout
 - [ ] Offline mode: queue messages, show status
-- [ ] Unit tests for core logic (connection, MAM, OMEMO)
+- [x] Unit tests for core logic — Vitest (unread/sound counting); see `package.json` test scripts
+- [x] Layout invariant tests — Playwright mobile viewport (`e2e/layout.spec.ts`)
 - [ ] Integration tests with a test XMPP server
 - [ ] Performance profiling (large chat histories, many contacts)
 - [ ] Bundle optimization and code splitting
+
+### Known issue: ghost (empty) push notifications
+Occasional empty notifications are **server-triggered**, not an fpush heartbeat.
+Diagnosis and fix options (server-side `mod_cloud_notify` config vs. fpush
+data-only push) are documented in [`docs/ghost-notifications.md`](docs/ghost-notifications.md).
 
 ---
 

@@ -55,8 +55,12 @@ export class LoginView extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      min-height: 100dvh;
+      /* Fill exactly the parent (xmpp-app is height:100%), which sits inside
+         html's padded (safe-area) box. Using 100dvh here would be the FULL
+         viewport and overflow the padded box, causing a scrollable white strip. */
+      height: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
       background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
       background-attachment: fixed;
       padding: 1rem;
