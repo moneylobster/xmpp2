@@ -34,23 +34,53 @@ jobs:
       - name: Generate app icons and splash
         run: npx capacitor-assets generate --android
 
-      - uses: gradle/actions/setup-gradle@v6
+      - name: Cache Gradle distribution
+        id: gradle-dist
+        uses: actions/cache@v6
+        with:
+          path: ~/gradle-8.14.3
+          key: gradle-dist-8.14.3-${{ runner.os }}
+
+      - name: Install Gradle 8.14.3
+        if: steps.gradle-dist.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The wrapper's distribution URL redirects to github.com, which has been
+          # returning 504 for this asset. The GitHub API asset endpoint redirects
+          # to a different CDN host and is reliable, so fetch Gradle there and use
+          # the `gradle` command instead of `./gradlew`.
+          ASSET_ID=$(curl -fsSL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/gradle/gradle-distributions/releases/tags/v8.14.3 \
+            | jq -r '.assets[] | select(.name == "gradle-8.14.3-bin.zip") | .id')
+          test -n "$ASSET_ID"
+          test "$ASSET_ID" != "null"
+          curl -fL --retry 5 --retry-delay 10 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -o "$RUNNER_TEMP/gradle.zip" \
+            "https://api.github.com/repos/gradle/gradle-distributions/releases/assets/${ASSET_ID}"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$HOME"
+          chmod +x "$HOME/gradle-8.14.3/bin/gradle"
+          "$HOME/gradle-8.14.3/bin/gradle" --version
+
+      - name: Add Gradle to PATH
+        run: |
+          chmod +x "$HOME/gradle-8.14.3/bin/gradle"
+          echo "$HOME/gradle-8.14.3/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/notifications
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            gradle-cache-${{ runner.os }}-
 
       - name: Create google-services.json
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
-
-      - name: Increase Gradle wrapper network timeout
-        run: |
-          PROP=android/gradle/wrapper/gradle-wrapper.properties
-          # The Capacitor template ships networkTimeout=10000; replace it rather
-          # than only appending when absent.
-          if grep -q '^networkTimeout=' "$PROP"; then
-            sed -i -E 's/^networkTimeout=.*/networkTimeout=120000/' "$PROP"
-          else
-            echo 'networkTimeout=120000' >> "$PROP"
-          fi
-          # The -all distribution is much larger than the -bin one and is not needed here.
-          sed -i 's/-all\.zip/-bin.zip/' "$PROP"
 
       - name: Build APK
         working-directory: android
@@ -60,7 +90,7 @@ jobs:
             -Dorg.gradle.internal.http.socketTimeout=120000
         run: |
           for attempt in 1 2 3; do
-            if ./gradlew assembleDebug --no-daemon; then
+            if gradle assembleDebug --no-daemon; then
               exit 0
             fi
             echo "Gradle build attempt ${attempt} failed; retrying in 20s..."
