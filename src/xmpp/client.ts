@@ -1,6 +1,8 @@
 import type { ConnectionStatus, XMPPConfig } from '@/types';
 import { events, CONNECTION_STATUS_CHANGED, LOGGED_OUT } from './events';
 import { disablePushOnServer, resetPushState } from '@/utils/push';
+import { recordReply } from '@/utils/replies';
+import { recordReactions } from '@/utils/reactions';
 
 // Import headless-only build — no UI plugins, just XMPP protocol handling
 import 'converse.js';
@@ -71,6 +73,36 @@ export async function initClient(): Promise<void> {
         console.info('[XMPP] logout');
         setStatus('disconnected');
         events.emit(LOGGED_OUT);
+      });
+
+      _api.listen.on('message', (data: any) => {
+        const stanza = data?.stanza;
+        if (!stanza?.querySelector) return;
+        const msgid = String(data?.attrs?.msgid || stanza.getAttribute('id') || '');
+        if (!msgid) return;
+
+        const reply = stanza.querySelector('reply[xmlns="urn:xmpp:reply:0"]');
+        if (reply) {
+          recordReply(msgid, reply.getAttribute('id') || '', reply.getAttribute('to') || '');
+        }
+
+        const reactions = stanza.querySelector('reactions[xmlns="urn:xmpp:reactions:0"]');
+        if (reactions) {
+          const emojis = Array.from(reactions.querySelectorAll('reaction') as NodeListOf<Element>)
+            .map((r: Element) => (r.textContent || '').trim())
+            .filter(Boolean);
+          recordReactions(msgid, emojis, String(data?.attrs?.from || 'them'));
+          window.dispatchEvent(new CustomEvent('reactions-changed'));
+        }
+      });
+
+      _api.listen.on('createMessageStanza', (_chat: any, data: any) => {
+        const message = data?.message;
+        const replyTo = message?.get?.('reply_to');
+        if (!replyTo || !data?.stanza?.c) return data;
+        const to = String(message.get('reply_to_jid') || '');
+        data.stanza.c('reply', { xmlns: 'urn:xmpp:reply:0', to, id: String(replyTo) }).up();
+        return data;
       });
     },
   });

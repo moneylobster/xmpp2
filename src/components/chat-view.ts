@@ -15,6 +15,9 @@ import { hapticLight } from '@/utils/haptics';
 import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
+import { getReply } from '@/utils/replies';
+import { getReactions, sendReaction, type ReactionSummary } from '@/utils/reactions';
+import { toast } from './notification-toast';
 import {
   getDraft, setDraft, clearDraft, isMuted, isPinned, isArchived,
   setMuted, setPinned, setArchived,
@@ -25,6 +28,7 @@ import type { InfoMediaItem } from './chat-info';
 
 interface MessageInfo {
   id: string;
+  msgid: string;
   body: string;
   sender: 'me' | 'them';
   time: string;
@@ -34,10 +38,19 @@ interface MessageInfo {
   isEdited: boolean;
   isEncrypted: boolean;
   decryptedUrl?: string | null;
+  retracted: boolean;
+  editable: boolean;
+  received: boolean;
+  displayed: boolean;
+  model: MessageModel;
+  replyToBody: string;
+  replyToName: string;
+  reactions: ReactionSummary[];
 }
 
 interface MessageModel {
   get(attr: string): unknown;
+  save?(attrs: Record<string, unknown>): unknown;
   cid?: string;
 }
 
@@ -63,6 +76,11 @@ export class ChatView extends LitElement {
   @state() private pinned = false;
   @state() private muted = false;
   @state() private archived = false;
+  @state() private firstUnreadId = '';
+  @state() private showJump = false;
+  @state() private actionMessage: MessageInfo | null = null;
+  @state() private editingMessage: MessageInfo | null = null;
+  @state() private replyTo: MessageInfo | null = null;
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
@@ -108,6 +126,11 @@ export class ChatView extends LitElement {
     this.omemoActive = false;
     this.omemoSupported = false;
     this.showInfo = false;
+    this.firstUnreadId = '';
+    this.showJump = false;
+    this.actionMessage = null;
+    this.editingMessage = null;
+    this.replyTo = null;
   }
 
   private async openChat() {
@@ -150,6 +173,10 @@ export class ChatView extends LitElement {
         await this.chatbox.messages.fetched;
       }
 
+      // Capture the first unread message before clearing the counter, so the
+      // conversation can render a "New messages" divider at that point.
+      this.firstUnreadId = String(this.chatbox.get('first_unread_id') || '');
+
       // Clear unread count when chat is opened.
       void clearUnread(this.chatbox);
 
@@ -172,6 +199,10 @@ export class ChatView extends LitElement {
         this.chatbox?.messages?.off('add', addHandler);
         this.chatbox?.messages?.off('change', addHandler);
       });
+
+      const reactionsHandler = () => this.loadMessages();
+      window.addEventListener('reactions-changed', reactionsHandler);
+      this.cleanups.push(() => window.removeEventListener('reactions-changed', reactionsHandler));
 
       this.cleanups.push(trackOmemo(this.chatbox, (active, supported) => {
         this.omemoActive = active;
@@ -201,13 +232,25 @@ export class ChatView extends LitElement {
       .filter((m: MessageModel) => {
         const body = m.get('body');
         const type = m.get('type');
-        return !!body && (type === 'chat' || type === 'normal' || !type);
+        return (!!body || !!m.get('retracted')) && (type === 'chat' || type === 'normal' || !type);
       })
       .map((m: MessageModel) => {
         const timeISO = String(m.get('time') || '');
-        const body = getMessageBody(m);
+        const msgid = String(m.get('msgid') || m.get('id') || m.cid || '');
+        const retracted = !!m.get('retracted');
+        const body = retracted ? 'Message deleted' : getMessageBody(m);
+        const reply = getReply(msgid) ||
+          (m.get('reply_to')
+            ? { id: String(m.get('reply_to')), to: String(m.get('reply_to_jid') || '') }
+            : undefined);
+        const quoted = reply
+          ? (this.chatbox?.messages?.models as MessageModel[] | undefined)?.find(
+              (x) => String(x.get('msgid')) === reply.id,
+            )
+          : undefined;
         return {
-          id: String(m.get('msgid') || m.get('id') || m.cid || ''),
+          id: msgid,
+          msgid,
           body,
           sender: m.get('sender') === 'me' ? 'me' as const : 'them' as const,
           time: formatTime(timeISO),
@@ -217,6 +260,18 @@ export class ChatView extends LitElement {
           isEdited: !!m.get('edited'),
           isEncrypted: !!m.get('is_encrypted'),
           decryptedUrl: isAesgcmUrl(body) ? (this.decryptedCache.get(body) ?? undefined) : undefined,
+          retracted,
+          editable: !!m.get('editable'),
+          received: !!m.get('received'),
+          displayed: !!m.get('marker_displayed'),
+          model: m,
+          replyToBody: quoted ? getMessageBody(quoted) : '',
+          replyToName: quoted
+            ? (quoted.get('sender') === 'me'
+                ? 'You'
+                : String(quoted.get('nick') || this.contactName || 'Message'))
+            : '',
+          reactions: getReactions(msgid),
         };
       })
       .sort((a: MessageInfo, b: MessageInfo) => a.timeISO.localeCompare(b.timeISO));
@@ -279,6 +334,8 @@ export class ChatView extends LitElement {
   }
 
   private scrollToBottom() {
+    this.autoScroll = true;
+    this.showJump = false;
     requestAnimationFrame(() => {
       if (this.messagesEl) {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -290,6 +347,7 @@ export class ChatView extends LitElement {
     if (!this.messagesEl || this.restoringScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     this.autoScroll = scrollHeight - scrollTop - clientHeight < 50;
+    this.showJump = !this.autoScroll && this.messages.length > 0;
 
     if (scrollTop < 80 && !this.loadingOlder && !this.allHistoryLoaded) {
       this.fetchOlderMessages();
@@ -301,10 +359,17 @@ export class ChatView extends LitElement {
     if (!text || !this.chatbox || !this.connected) return;
 
     try {
-      await this.chatbox.sendMessage({ body: text });
+      const attrs: Record<string, unknown> = { body: text };
+      if (this.replyTo) {
+        attrs.reply_to = this.replyTo.msgid;
+        attrs.reply_to_jid = String(this.replyTo.model.get('from') || '');
+      }
+      await this.chatbox.sendMessage(attrs);
       // Only clear after a successful send so a failed send doesn't lose the draft.
       this.inputText = '';
       clearDraft(this.jid);
+      this.replyTo = null;
+      this.editingMessage = null;
       await this.updateComplete;
       autoResizeTextarea(this.inputEl);
       suppressOwnMessageNotifications();
@@ -314,6 +379,74 @@ export class ChatView extends LitElement {
     } catch (err) {
       console.error('Failed to send message:', err);
     }
+  }
+
+  private startReply() {
+    if (!this.actionMessage) return;
+    this.replyTo = this.actionMessage;
+    this.actionMessage = null;
+    this.updateComplete.then(() => this.inputEl?.focus());
+  }
+
+  private startEdit() {
+    const msg = this.actionMessage;
+    if (!msg || !msg.editable || msg.retracted) return;
+    try {
+      msg.model.save?.({ correcting: true });
+    } catch (err) {
+      console.error('Failed to start edit:', err);
+      return;
+    }
+    this.editingMessage = msg;
+    this.inputText = msg.body;
+    this.actionMessage = null;
+    this.updateComplete.then(() => {
+      this.inputEl?.focus();
+      autoResizeTextarea(this.inputEl);
+    });
+  }
+
+  private cancelEdit() {
+    try {
+      this.editingMessage?.model.save?.({ correcting: false });
+    } catch {
+      // ignore
+    }
+    this.editingMessage = null;
+    this.inputText = '';
+    clearDraft(this.jid);
+  }
+
+  private async copyMessage() {
+    const msg = this.actionMessage;
+    if (!msg) return;
+    try {
+      await navigator.clipboard.writeText(msg.body);
+      toast.success('Copied');
+    } catch {
+      toast.error('Could not copy');
+    }
+    this.actionMessage = null;
+  }
+
+  private async retractMessage() {
+    const msg = this.actionMessage;
+    if (!msg || !this.chatbox) return;
+    try {
+      await this.chatbox.retractOwnMessage(msg.model);
+      this.loadMessages();
+    } catch (err) {
+      console.error('Failed to retract message:', err);
+      toast.error('Could not delete message');
+    }
+    this.actionMessage = null;
+  }
+
+  private react(msg: MessageInfo, emoji: string) {
+    if (!this.chatbox) return;
+    sendReaction(this.chatbox, msg.msgid, emoji);
+    this.actionMessage = null;
+    this.loadMessages();
   }
 
   private handleKeyDown(e: KeyboardEvent) {
@@ -659,6 +792,176 @@ export class ChatView extends LitElement {
 
     .msg.me .msg-meta { justify-content: flex-end; }
 
+    .msg.retracted { opacity: 0.65; font-style: italic; }
+
+    .msg-menu {
+      border: none;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 0.875rem;
+      line-height: 1;
+      padding: 0 0.125rem;
+      opacity: 0.6;
+    }
+
+    .msg-menu:hover { opacity: 1; }
+
+    .receipt { letter-spacing: -0.1em; }
+
+    .quoted {
+      border-left: 2px solid var(--color-primary);
+      padding: 0.25rem 0.5rem;
+      margin-bottom: 0.25rem;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+    }
+
+    .msg.me .quoted { background: rgba(255, 255, 255, 0.15); }
+
+    .quoted-name { font-weight: 600; opacity: 0.85; }
+
+    .quoted-body {
+      opacity: 0.8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reactions {
+      display: flex;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+      margin-top: 0.25rem;
+    }
+
+    .reaction {
+      border: 1px solid var(--color-border);
+      background: var(--color-bg-card);
+      border-radius: 0.75rem;
+      padding: 0 0.375rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      color: inherit;
+    }
+
+    .msg.me .reaction { background: rgba(255, 255, 255, 0.15); border-color: transparent; }
+
+    .unread-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--color-primary);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0.5rem 0;
+    }
+
+    .unread-divider::before,
+    .unread-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--color-primary);
+      opacity: 0.3;
+    }
+
+    .jump-btn {
+      position: absolute;
+      right: 1rem;
+      bottom: 4.5rem;
+      z-index: 5;
+      border: none;
+      border-radius: 999px;
+      background: var(--color-primary);
+      color: #fff;
+      padding: 0.375rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--shadow-card);
+    }
+
+    .compose-context {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--color-bg-card);
+      border-top: 1px solid var(--color-border);
+      font-size: 0.75rem;
+    }
+
+    .compose-context > div { flex: 1; min-width: 0; }
+
+    .compose-context-body {
+      opacity: 0.7;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .compose-context button {
+      border: none;
+      background: none;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .action-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .action-sheet {
+      background: var(--color-bg-card);
+      border-radius: 1rem 1rem 0 0;
+      padding: 0.5rem;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .action {
+      border: none;
+      background: none;
+      text-align: left;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.9375rem;
+      color: var(--color-text);
+      cursor: pointer;
+    }
+
+    .action:hover { background: var(--color-bg-hover); }
+    .action.danger { color: var(--color-error); }
+
+    .reaction-row {
+      display: flex;
+      justify-content: space-around;
+      padding: 0.25rem 0.5rem 0.5rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .reaction-row button {
+      border: none;
+      background: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+
     .msg a {
       color: inherit;
       text-decoration: underline;
@@ -936,14 +1239,33 @@ export class ChatView extends LitElement {
   }
 
   private renderMessage(msg: MessageInfo) {
-    const cls = `msg ${msg.sender}${msg.isError ? ' error' : ''}`;
+    const cls = `msg ${msg.sender}${msg.isError ? ' error' : ''}${msg.retracted ? ' retracted' : ''}`;
+    const receipt = msg.displayed ? 'Read' : msg.received ? 'Delivered' : 'Sent';
     return html`
       <div class=${cls}>
+        ${msg.replyToBody ? html`
+          <div class="quoted">
+            <div class="quoted-name">${msg.replyToName}</div>
+            <div class="quoted-body">${msg.replyToBody}</div>
+          </div>
+        ` : nothing}
         ${this.renderMessageBody(msg)}
+        ${msg.reactions.length ? html`
+          <div class="reactions">
+            ${msg.reactions.map((r) => html`
+              <button class="reaction" @click=${() => this.react(msg, r.emoji)}>${r.emoji} ${r.count}</button>
+            `)}
+          </div>
+        ` : nothing}
         <div class="msg-meta">
           ${msg.isEncrypted ? html`<span title="Encrypted">&#x1F512;</span>` : nothing}
           ${msg.isEdited ? html`<span>edited</span>` : nothing}
+          ${msg.sender === 'me' && !msg.retracted
+            ? html`<span class="receipt" title=${receipt}>${msg.displayed ? '✓✓' : msg.received ? '✓' : '…'}</span>`
+            : nothing}
           <span>${msg.time}</span>
+          <button class="msg-menu" @click=${(e: Event) => { e.stopPropagation(); this.actionMessage = msg; }}
+            aria-label="Message actions">⋯</button>
         </div>
       </div>
     `;
@@ -952,6 +1274,7 @@ export class ChatView extends LitElement {
   private renderMessages() {
     const items: TemplateResult[] = [];
     let lastDateKey = '';
+    let unreadShown = false;
 
     for (const msg of this.messages) {
       if (msg.dateKey !== lastDateKey) {
@@ -961,6 +1284,10 @@ export class ChatView extends LitElement {
           </div>
         `);
         lastDateKey = msg.dateKey;
+      }
+      if (!unreadShown && this.firstUnreadId && msg.id === this.firstUnreadId) {
+        items.push(html`<div class="unread-divider"><span>New messages</span></div>`);
+        unreadShown = true;
       }
       items.push(this.renderMessage(msg));
     }
@@ -987,6 +1314,30 @@ export class ChatView extends LitElement {
       }
     }
     return items;
+  }
+
+  private renderActionSheet() {
+    const msg = this.actionMessage;
+    if (!msg) return nothing;
+    return html`
+      <div class="action-overlay" @click=${() => (this.actionMessage = null)}>
+        <div class="action-sheet" role="dialog" aria-label="Message actions"
+          @click=${(e: Event) => e.stopPropagation()}>
+          <div class="reaction-row">
+            ${['👍', '❤️', '😂', '😮', '😢'].map((emoji) => html`
+              <button @click=${() => this.react(msg, emoji)} aria-label="React ${emoji}">${emoji}</button>
+            `)}
+          </div>
+          <button class="action" @click=${this.copyMessage}>Copy</button>
+          <button class="action" @click=${this.startReply}>Reply</button>
+          ${msg.sender === 'me' && msg.editable && !msg.retracted
+            ? html`<button class="action" @click=${this.startEdit}>Edit</button>` : nothing}
+          ${msg.sender === 'me' && !msg.retracted
+            ? html`<button class="action danger" @click=${this.retractMessage}>Delete</button>` : nothing}
+          <button class="action" @click=${() => (this.actionMessage = null)}>Cancel</button>
+        </div>
+      </div>
+    `;
   }
 
   render() {
@@ -1063,12 +1414,35 @@ export class ChatView extends LitElement {
             </div>
           `}
 
+      ${this.showJump
+        ? html`<button class="jump-btn" @click=${this.scrollToBottom}>New messages ↓</button>`
+        : nothing}
+
       ${this.uploadError ? html`<div class="upload-error">${this.uploadError}</div>` : nothing}
       ${this.uploading ? html`
         <div class="upload-bar">
           <div class="upload-progress">
             <div class="upload-progress-fill" style="width: ${this.uploadProgress}%"></div>
           </div>
+        </div>
+      ` : nothing}
+
+      ${this.replyTo ? html`
+        <div class="compose-context">
+          <div>
+            <strong>Replying to ${this.replyTo.sender === 'me' ? 'yourself' : this.contactName}</strong>
+            <div class="compose-context-body">${this.replyTo.body}</div>
+          </div>
+          <button @click=${() => (this.replyTo = null)} aria-label="Cancel reply">×</button>
+        </div>
+      ` : nothing}
+      ${this.editingMessage ? html`
+        <div class="compose-context">
+          <div>
+            <strong>Editing message</strong>
+            <div class="compose-context-body">${this.editingMessage.body}</div>
+          </div>
+          <button @click=${this.cancelEdit} aria-label="Cancel edit">×</button>
         </div>
       ` : nothing}
 
@@ -1102,6 +1476,8 @@ export class ChatView extends LitElement {
           </svg>
         </button>
       </div>
+
+      ${this.renderActionSheet()}
 
       ${this.showInfo
         ? html`
