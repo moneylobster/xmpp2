@@ -23,6 +23,8 @@ import {
 } from '@/utils/preferences';
 import './skeleton-loader';
 import './chat-info';
+import './media-lightbox';
+import './emoji-picker';
 import type { InfoMediaItem } from './chat-info';
 
 interface MucMessage {
@@ -91,6 +93,10 @@ export class MucView extends LitElement {
   @state() private actionMessage: MucMessage | null = null;
   @state() private editingMessage: MucMessage | null = null;
   @state() private replyTo: MucMessage | null = null;
+  @state() private lightboxOpen = false;
+  @state() private lightboxUrl = '';
+  @state() private lightboxName = '';
+  @state() private emojiOpen = false;
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
@@ -138,6 +144,16 @@ export class MucView extends LitElement {
     this.actionMessage = null;
     this.editingMessage = null;
     this.replyTo = null;
+    this.lightboxOpen = false;
+    this.lightboxUrl = '';
+    this.lightboxName = '';
+    this.emojiOpen = false;
+  }
+
+  private openLightbox(url: string, name: string) {
+    this.lightboxUrl = url;
+    this.lightboxName = name;
+    this.lightboxOpen = true;
   }
 
   private async openRoom() {
@@ -468,6 +484,18 @@ export class MucView extends LitElement {
     this.archived = !this.archived;
     setArchived(this.jid, this.archived);
     this.notifyPrefs();
+  }
+
+  private insertEmoji(e: CustomEvent) {
+    const emoji = String(e.detail || '');
+    if (!emoji) return;
+    this.inputText += emoji;
+    setDraft(this.jid, this.inputText);
+    this.emojiOpen = false;
+    this.updateComplete.then(() => {
+      this.inputEl?.focus();
+      autoResizeTextarea(this.inputEl);
+    });
   }
 
   private openFilePicker() {
@@ -1102,7 +1130,7 @@ export class MucView extends LitElement {
       }
       if (isImageUrl(body)) {
         return html`<img class="msg-image" src="${blobUrl}" alt="encrypted image" loading="lazy"
-          @click=${() => window.open(blobUrl, '_blank')} />`;
+          @click=${() => this.openLightbox(blobUrl, fileNameFromUrl(body))} />`;
       }
       const parsed = new URL(body.replace('aesgcm://', 'https://'));
       const filename = decodeURIComponent(parsed.pathname.split('/').pop() || 'file');
@@ -1116,7 +1144,7 @@ export class MucView extends LitElement {
     if (single) {
       if (isImageUrl(single)) {
         return html`<img class="msg-image" src="${single}" alt="image" loading="lazy"
-          @click=${() => window.open(single, '_blank')} />`;
+          @click=${() => this.openLightbox(single, fileNameFromUrl(single))} />`;
       }
       const url = new URL(single);
       const filename = decodeURIComponent(url.pathname.split('/').pop() || 'file');
@@ -1328,6 +1356,8 @@ export class MucView extends LitElement {
 
       <input type="file" id="file-input" hidden @change=${this.handleFileSelect} />
       <div class="input-bar">
+        <button class="attach-btn" @click=${() => (this.emojiOpen = !this.emojiOpen)}
+          title="Emoji" aria-label="Emoji">🙂</button>
         <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading || !this.connected} title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -1358,6 +1388,19 @@ export class MucView extends LitElement {
       </div>
 
       ${this.renderActionSheet()}
+
+      <emoji-picker
+        .open=${this.emojiOpen}
+        @close=${() => (this.emojiOpen = false)}
+        @emoji-selected=${this.insertEmoji}
+      ></emoji-picker>
+
+      <media-lightbox
+        .open=${this.lightboxOpen}
+        .url=${this.lightboxUrl}
+        .name=${this.lightboxName}
+        @close=${() => (this.lightboxOpen = false)}
+      ></media-lightbox>
 
       ${this.showInfo
         ? html`
