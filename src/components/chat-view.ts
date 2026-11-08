@@ -82,6 +82,7 @@ export class ChatView extends LitElement {
   @state() private archived = false;
   @state() private firstUnreadId = '';
   @state() private showJump = false;
+  @state() private newBelow = false;
   @state() private actionMessage: MessageInfo | null = null;
   @state() private editingMessage: MessageInfo | null = null;
   @state() private replyTo: MessageInfo | null = null;
@@ -131,11 +132,13 @@ export class ChatView extends LitElement {
     this.allHistoryLoaded = false;
     this.loadingOlder = false;
     this.restoringScroll = false;
+    this.suppressOlderFetch = false;
     this.omemoActive = false;
     this.omemoSupported = false;
     this.showInfo = false;
     this.firstUnreadId = '';
     this.showJump = false;
+    this.newBelow = false;
     this.actionMessage = null;
     this.editingMessage = null;
     this.replyTo = null;
@@ -205,19 +208,28 @@ export class ChatView extends LitElement {
       this.scrollToBottom();
       this.updateComplete.then(() => autoResizeTextarea(this.inputEl));
 
-      const addHandler = () => {
+      const messageAdded = () => {
         this.loadMessages();
         if (this.autoScroll) {
           this.scrollToBottom();
           // User is at the bottom and viewing this chat, so it is being read.
           void clearUnread(this.chatbox);
+        } else {
+          this.newBelow = true;
         }
       };
-      this.chatbox.messages.on('add', addHandler);
-      this.chatbox.messages.on('change', addHandler);
+      const messageChanged = () => {
+        this.loadMessages();
+        if (this.autoScroll) {
+          this.scrollToBottom();
+          void clearUnread(this.chatbox);
+        }
+      };
+      this.chatbox.messages.on('add', messageAdded);
+      this.chatbox.messages.on('change', messageChanged);
       this.cleanups.push(() => {
-        this.chatbox?.messages?.off('add', addHandler);
-        this.chatbox?.messages?.off('change', addHandler);
+        this.chatbox?.messages?.off('add', messageAdded);
+        this.chatbox?.messages?.off('change', messageChanged);
       });
 
       const reactionsHandler = () => this.loadMessages();
@@ -308,12 +320,34 @@ export class ChatView extends LitElement {
   }
 
   private restoringScroll = false;
+  private suppressOlderFetch = false;
+
+  private getScrollAnchor(
+    el: HTMLElement | null,
+  ): { id: string; offset: number } | null {
+    if (!el) return null;
+    const containerTop = el.getBoundingClientRect().top;
+    const nodes = el.querySelectorAll<HTMLElement>('.msg[data-msgid]');
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      if (rect.bottom >= containerTop) {
+        const id = node.dataset.msgid || '';
+        return id ? { id, offset: rect.top - containerTop } : null;
+      }
+    }
+    return null;
+  }
 
   private async fetchOlderMessages() {
-    if (this.loadingOlder || this.allHistoryLoaded || !this.chatbox) return;
+    if (this.loadingOlder || this.allHistoryLoaded || this.suppressOlderFetch || !this.chatbox) return;
 
     const api = getApi();
     if (!api) return;
+
+    const el = this.messagesEl;
+    const prevScrollTop = el?.scrollTop || 0;
+    const prevScrollHeight = el?.scrollHeight || 0;
+    const anchor = this.getScrollAnchor(el);
 
     this.loadingOlder = true;
 
@@ -337,25 +371,40 @@ export class ChatView extends LitElement {
       console.error('Failed to fetch older messages:', err);
     }
 
-    // Capture scroll height before re-render removes spinner
-    const el = this.messagesEl;
-    const prevScrollHeight = el?.scrollHeight || 0;
-
     this.loadingOlder = false;
 
-    // Wait for Lit to re-render, then restore scroll position
+    // Wait for Lit to re-render, then restore the same message under the
+    // viewport. Using the old scrollTop (not just the height delta) keeps the
+    // user's position stable, and suppressing fetch until two frames after the
+    // restore prevents the scroll event from triggering another page load.
+    this.restoringScroll = true;
+    this.suppressOlderFetch = true;
     await this.updateComplete;
+
     if (el) {
-      this.restoringScroll = true;
-      el.scrollTop = el.scrollHeight - prevScrollHeight;
-      // Allow handleScroll to work again after a tick
-      requestAnimationFrame(() => { this.restoringScroll = false; });
+      const anchorNode = anchor
+        ? el.querySelector<HTMLElement>(`[data-msgid="${CSS.escape(anchor.id)}"]`)
+        : null;
+      if (anchor && anchorNode) {
+        const containerTop = el.getBoundingClientRect().top;
+        el.scrollTop += anchorNode.getBoundingClientRect().top - containerTop - anchor.offset;
+      } else {
+        el.scrollTop = prevScrollTop + (el.scrollHeight - prevScrollHeight);
+      }
     }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.restoringScroll = false;
+        this.suppressOlderFetch = false;
+      });
+    });
   }
 
   private scrollToBottom() {
     this.autoScroll = true;
     this.showJump = false;
+    this.newBelow = false;
     requestAnimationFrame(() => {
       if (this.messagesEl) {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -367,9 +416,10 @@ export class ChatView extends LitElement {
     if (!this.messagesEl || this.restoringScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     this.autoScroll = scrollHeight - scrollTop - clientHeight < 50;
+    if (this.autoScroll) this.newBelow = false;
     this.showJump = !this.autoScroll && this.messages.length > 0;
 
-    if (scrollTop < 80 && !this.loadingOlder && !this.allHistoryLoaded) {
+    if (scrollTop < 80 && !this.loadingOlder && !this.allHistoryLoaded && !this.suppressOlderFetch) {
       this.fetchOlderMessages();
     }
   }
@@ -734,6 +784,7 @@ export class ChatView extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 0.25rem;
+      overflow-anchor: none;
     }
 
     .date-separator {
@@ -1281,7 +1332,7 @@ export class ChatView extends LitElement {
     const cls = `msg ${msg.sender}${msg.isError ? ' error' : ''}${msg.retracted ? ' retracted' : ''}`;
     const receipt = msg.displayed ? 'Read' : msg.received ? 'Delivered' : 'Sent';
     return html`
-      <div class=${cls}>
+      <div class=${cls} data-msgid=${msg.id}>
         ${msg.replyToBody ? html`
           <div class="quoted">
             <div class="quoted-name">${msg.replyToName}</div>
@@ -1456,7 +1507,9 @@ export class ChatView extends LitElement {
           `}
 
       ${this.showJump
-        ? html`<button class="jump-btn" @click=${this.scrollToBottom}>New messages ↓</button>`
+        ? html`<button class="jump-btn" @click=${this.scrollToBottom}>
+            ${this.newBelow ? 'New messages ↓' : 'Jump to latest ↓'}
+          </button>`
         : nothing}
 
       ${this.uploadError ? html`<div class="upload-error">${this.uploadError}</div>` : nothing}

@@ -4,6 +4,7 @@ const DRAFTS_KEY = 'xmpp-drafts';
 const MUTED_KEY = 'xmpp-muted';
 const PINNED_KEY = 'xmpp-pinned';
 const ARCHIVED_KEY = 'xmpp-archived';
+const OMEMO_DISABLED_KEY = 'xmpp-omemo-disabled';
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -53,6 +54,16 @@ function saveSet(key: string, set: Set<string>): void {
 const muted = loadSet(MUTED_KEY);
 const pinned = loadSet(PINNED_KEY);
 const archived = loadSet(ARCHIVED_KEY);
+const omemoDisabled = loadSet(OMEMO_DISABLED_KEY);
+
+export function isOmemoDisabled(jid: string): boolean {
+  return omemoDisabled.has(jid);
+}
+
+export function setOmemoDisabled(jid: string, value: boolean): void {
+  if (value) omemoDisabled.add(jid); else omemoDisabled.delete(jid);
+  saveSet(OMEMO_DISABLED_KEY, omemoDisabled);
+}
 
 export function isMuted(jid: string): boolean {
   return muted.has(jid);

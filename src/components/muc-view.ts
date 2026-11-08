@@ -20,7 +20,7 @@ import { getReactions, sendReaction, type ReactionSummary } from '@/utils/reacti
 import { toast } from './notification-toast';
 import {
   getDraft, setDraft, clearDraft, isMuted, isPinned, isArchived,
-  setMuted, setPinned, setArchived,
+  setMuted, setPinned, setArchived, isOmemoDisabled, setOmemoDisabled,
 } from '@/utils/preferences';
 import './skeleton-loader';
 import './chat-info';
@@ -92,6 +92,7 @@ export class MucView extends LitElement {
   @state() private archived = false;
   @state() private firstUnreadId = '';
   @state() private showJump = false;
+  @state() private newBelow = false;
   @state() private actionMessage: MucMessage | null = null;
   @state() private editingMessage: MucMessage | null = null;
   @state() private replyTo: MucMessage | null = null;
@@ -143,6 +144,7 @@ export class MucView extends LitElement {
     this.showInfo = false;
     this.firstUnreadId = '';
     this.showJump = false;
+    this.newBelow = false;
     this.actionMessage = null;
     this.editingMessage = null;
     this.replyTo = null;
@@ -218,19 +220,28 @@ export class MucView extends LitElement {
       // MAM backfill during the join can bump the counters again.
       void clearUnread(this.muc);
 
-      const msgHandler = () => {
+      const messageAdded = () => {
         this.loadMessages();
         if (this.autoScroll) {
           this.scrollToBottom();
           // User is at the bottom and viewing this room, so it is being read.
           void clearUnread(this.muc);
+        } else {
+          this.newBelow = true;
         }
       };
-      this.muc.messages.on('add', msgHandler);
-      this.muc.messages.on('change', msgHandler);
+      const messageChanged = () => {
+        this.loadMessages();
+        if (this.autoScroll) {
+          this.scrollToBottom();
+          void clearUnread(this.muc);
+        }
+      };
+      this.muc.messages.on('add', messageAdded);
+      this.muc.messages.on('change', messageChanged);
       this.cleanups.push(() => {
-        this.muc?.messages?.off('add', msgHandler);
-        this.muc?.messages?.off('change', msgHandler);
+        this.muc?.messages?.off('add', messageAdded);
+        this.muc?.messages?.off('change', messageChanged);
       });
 
       const occHandler = () => this.loadOccupants();
@@ -256,6 +267,16 @@ export class MucView extends LitElement {
       this.cleanups.push(trackOmemo(this.muc, (active, supported) => {
         this.omemoActive = active;
         this.omemoSupported = supported;
+        // Converse applies `omemo_default` to 1:1 chats but not reliably to
+        // groupchats. Turn it on once the room advertises support, unless the
+        // user explicitly disabled encryption for this room.
+        if (supported && !active && !isOmemoDisabled(this.jid)) {
+          try {
+            this.muc?.set('omemo_active', true);
+          } catch {
+            // ignore
+          }
+        }
       }));
     } catch (err) {
       console.error('Failed to open room:', err);
@@ -341,6 +362,7 @@ export class MucView extends LitElement {
   private scrollToBottom() {
     this.autoScroll = true;
     this.showJump = false;
+    this.newBelow = false;
     requestAnimationFrame(() => {
       if (this.messagesEl) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
     });
@@ -350,6 +372,7 @@ export class MucView extends LitElement {
     if (!this.messagesEl) return;
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     this.autoScroll = scrollHeight - scrollTop - clientHeight < 50;
+    if (this.autoScroll) this.newBelow = false;
     this.showJump = !this.autoScroll && this.messages.length > 0;
   }
 
@@ -466,6 +489,7 @@ export class MucView extends LitElement {
     const newState = !this.omemoActive;
     this.muc.set('omemo_active', newState);
     this.omemoActive = newState;
+    setOmemoDisabled(this.jid, !newState);
   }
 
   private notifyPrefs() {
@@ -1199,7 +1223,7 @@ export class MucView extends LitElement {
   private renderMessage(msg: MucMessage) {
     const receipt = msg.displayed ? 'Read' : msg.received ? 'Delivered' : 'Sent';
     return html`
-      <div class="msg ${msg.sender}${msg.retracted ? ' retracted' : ''}">
+      <div class="msg ${msg.sender}${msg.retracted ? ' retracted' : ''}" data-msgid=${msg.id}>
         ${msg.sender === 'them'
           ? html`<div class="msg-nick" style="color: ${this.nickColor(msg.nick)}">${msg.nick}</div>`
           : nothing}
@@ -1336,7 +1360,9 @@ export class MucView extends LitElement {
           `}
 
       ${this.showJump
-        ? html`<button class="jump-btn" @click=${this.scrollToBottom}>New messages ↓</button>`
+        ? html`<button class="jump-btn" @click=${this.scrollToBottom}>
+            ${this.newBelow ? 'New messages ↓' : 'Jump to latest ↓'}
+          </button>`
         : nothing}
 
       ${this.uploadError ? html`<div class="upload-error">${this.uploadError}</div>` : nothing}
