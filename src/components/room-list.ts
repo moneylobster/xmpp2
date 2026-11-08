@@ -3,7 +3,6 @@ import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi, getConverseInternal } from '@/xmpp/client';
 import { getUnreadCount, type ChatboxLike } from '@/utils/unread';
-import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
 interface RoomInfo {
@@ -103,7 +102,6 @@ export class RoomList extends LitElement {
   }
 
   private selectRoom(jid: string) {
-    hapticLight();
     this.dispatchEvent(
       new CustomEvent('room-selected', { detail: { jid }, bubbles: true, composed: true }),
     );

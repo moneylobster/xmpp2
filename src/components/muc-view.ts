@@ -644,15 +644,17 @@ export class MucView extends LitElement {
       flex: 1;
       border: 1px solid var(--color-border);
       border-radius: 1.25rem;
-      padding: 0.5rem 0.875rem;
+      padding: 0.375rem 0.75rem;
       font-size: 0.875rem;
       font-family: inherit;
       resize: none;
       outline: none;
       max-height: 120px;
-      line-height: 1.4;
+      line-height: 1.25;
       color: var(--color-text);
       background: var(--color-bg-input);
+      box-sizing: border-box;
+      overflow-y: hidden;
       transition: border-color var(--duration-fast), background var(--duration-fast);
     }
 
@@ -661,6 +663,7 @@ export class MucView extends LitElement {
     .send-btn {
       width: 2.25rem;
       height: 2.25rem;
+      padding: 0;
       border: none;
       border-radius: 50%;
       background: var(--color-primary);
@@ -670,6 +673,8 @@ export class MucView extends LitElement {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      line-height: 0;
+      box-sizing: border-box;
       transition: background var(--duration-fast), transform var(--duration-fast);
     }
 
@@ -677,11 +682,12 @@ export class MucView extends LitElement {
     .send-btn:active { transform: scale(0.93); }
     .send-btn:disabled { background: var(--color-text-muted); cursor: default; }
     .send-btn:disabled:active { transform: none; }
-    .send-btn svg { width: 1.125rem; height: 1.125rem; }
+    .send-btn svg { width: 1.125rem; height: 1.125rem; display: block; }
 
     .attach-btn {
       width: 2.25rem;
       height: 2.25rem;
+      padding: 0;
       border: none;
       border-radius: 50%;
       background: none;
@@ -691,13 +697,14 @@ export class MucView extends LitElement {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      line-height: 0;
       transition: color var(--duration-fast), transform var(--duration-fast);
     }
 
     .attach-btn:hover { color: var(--color-primary); }
     .attach-btn:active { transform: scale(0.93); }
     .attach-btn:disabled { color: var(--color-text-muted); cursor: default; }
-    .attach-btn svg { width: 1.25rem; height: 1.25rem; }
+    .attach-btn svg { width: 1.25rem; height: 1.25rem; display: block; }
 
     .upload-bar {
       padding: 0.25rem 1rem 0.5rem;
