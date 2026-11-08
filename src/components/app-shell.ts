@@ -2,7 +2,6 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { logout, getApi } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
-import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
 import { shouldCountUnread, incrementUnread, getUnreadCount, clearUnread } from '@/utils/unread';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
@@ -24,7 +23,6 @@ export class AppShell extends LitElement {
   @state() private userJid = '';
   @state() private selection: ChatSelection = null;
   @state() private mobileShowChat = false;
-  @state() private theme: ThemePreference = 'auto';
   @state() private viewMode: ViewMode = 'chat';
   @state() private totalUnread = 0;
 
@@ -35,8 +33,9 @@ export class AppShell extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     const api = getApi();
-    this.userJid = api?.user?.jid?.() || '';
-    this.theme = getThemePreference();
+    const fullJid = api?.user?.jid?.() || '';
+    this.userJid = fullJid.split('/')[0];
+    if (fullJid.includes('/')) console.info('[XMPP] full JID', fullJid);
 
     // Connection status toasts
     this.cleanups.push(
@@ -162,7 +161,6 @@ export class AppShell extends LitElement {
   private handleBack() {
     if (this.viewMode === 'settings') {
       this.viewMode = 'chat';
-      this.theme = getThemePreference();
     }
     this.mobileShowChat = false;
     // Refresh unread counts after leaving a chat (counts were cleared while viewing)
@@ -171,21 +169,6 @@ export class AppShell extends LitElement {
 
   private async handleLogout() {
     await logout();
-  }
-
-  private cycleTheme() {
-    const order: ThemePreference[] = ['auto', 'light', 'dark'];
-    const idx = order.indexOf(this.theme);
-    this.theme = order[(idx + 1) % 3];
-    setThemePreference(this.theme);
-  }
-
-  private themeIcon() {
-    switch (this.theme) {
-      case 'light': return '\u2600'; // ☀
-      case 'dark': return '\u263E';  // ☾
-      default: return '\u{1F313}';     // 🌓 (auto)
-    }
   }
 
   static styles = css`
@@ -409,7 +392,6 @@ export class AppShell extends LitElement {
         <div class="sidebar-header">
           <h2>XMPP Chat</h2>
           <div class="header-actions">
-            <button class="icon-btn" @click=${this.cycleTheme} title="Theme: ${this.theme}" aria-label="Toggle theme">${this.themeIcon()}</button>
             <button class="icon-btn" @click=${() => { this.viewMode = 'settings'; this.mobileShowChat = true; }} title="Settings" aria-label="Settings">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>

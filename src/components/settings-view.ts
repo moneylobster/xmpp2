@@ -337,8 +337,7 @@ export class SettingsView extends LitElement {
           <h3>About</h3>
           <div class="about">
             <strong>XMPP Chat</strong><br>
-            A modern XMPP client built with Converse.js and Lit.<br>
-            Phase 8 — UI &amp; UX Polish
+            A modern XMPP client.
           </div>
         </div>
 
