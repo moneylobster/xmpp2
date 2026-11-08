@@ -2,7 +2,10 @@ import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
 import { customElement, state, property, query } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
-import { getMessageBody, formatTime, dateKey, formatDateLabel, trackOmemo } from '@/utils/chat-utils';
+import {
+  getMessageBody, formatTime, dateKey, formatDateLabel, trackOmemo,
+  splitLinks, getSingleHttpUrl, type TextSegment,
+} from '@/utils/chat-utils';
 import {
   uploadAndSend, validateFile, isImageUrl, formatFileSize,
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
@@ -601,6 +604,13 @@ export class ChatView extends LitElement {
 
     .msg.me .msg-meta { justify-content: flex-end; }
 
+    .msg a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      word-break: break-word;
+    }
+
     .typing-indicator {
       align-self: flex-start;
       padding: 0.5rem 0.75rem;
@@ -846,21 +856,28 @@ export class ChatView extends LitElement {
       </a>`;
     }
 
-    try {
-      const url = new URL(body);
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        if (isImageUrl(body)) {
-          return html`<img class="msg-image" src="${body}" alt="image" loading="lazy"
-            @click=${() => window.open(body, '_blank')} />`;
-        }
-        const filename = decodeURIComponent(url.pathname.split('/').pop() || 'file');
-        return html`<a class="msg-file-link" href="${body}" target="_blank" rel="noopener">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-          ${filename}
-        </a>`;
+    const single = getSingleHttpUrl(body);
+    if (single) {
+      if (isImageUrl(single)) {
+        return html`<img class="msg-image" src="${single}" alt="image" loading="lazy"
+          @click=${() => window.open(single, '_blank')} />`;
       }
-    } catch { /* not a URL */ }
-    return html`<div>${body}</div>`;
+      const url = new URL(single);
+      const filename = decodeURIComponent(url.pathname.split('/').pop() || 'file');
+      return html`<a class="msg-file-link" href="${single}" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        ${filename}
+      </a>`;
+    }
+    return html`<div>${this.renderLinkedText(splitLinks(body))}</div>`;
+  }
+
+  private renderLinkedText(segments: TextSegment[]) {
+    return segments.map((part) =>
+      part.type === 'url'
+        ? html`<a href=${part.value} target="_blank" rel="noopener noreferrer">${part.value}</a>`
+        : part.value,
+    );
   }
 
   private renderMessage(msg: MessageInfo) {
