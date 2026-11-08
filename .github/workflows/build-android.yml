@@ -67,15 +67,7 @@ jobs:
           GRADLE_OPTS: >-
             -Dorg.gradle.internal.http.connectionTimeout=120000
             -Dorg.gradle.internal.http.socketTimeout=120000
-        run: |
-          for attempt in 1 2 3; do
-            if ./gradlew assembleDebug --no-daemon; then
-              exit 0
-            fi
-            echo "Gradle build attempt ${attempt} failed; retrying in 20s..."
-            sleep 20
-          done
-          exit 1
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK with version
         run: |
