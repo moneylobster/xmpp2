@@ -34,29 +34,45 @@ jobs:
       - name: Generate app icons and splash
         run: npx capacitor-assets generate --android
 
-      - name: Use Gradle 8.14.6
+      - name: Cache Gradle distribution
+        id: gradle-dist
+        uses: actions/cache@v6
+        with:
+          path: ~/gradle-8.14.6
+          key: gradle-dist-8.14.6-${{ runner.os }}
+
+      - name: Download Gradle 8.14.6
+        if: steps.gradle-dist.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Capacitor's template pins 8.14.3, whose release asset currently 504s
-          # from the wrapper's redirect target. 8.14.6 is the latest 8.x patch and
-          # is compatible with the template's Android Gradle Plugin 8.13.
-          PROP=android/gradle/wrapper/gradle-wrapper.properties
-          sed -i -E 's#gradle-[0-9.]+-(all|bin)\.zip#gradle-8.14.6-bin.zip#' "$PROP"
-          if grep -q '^networkTimeout=' "$PROP"; then
-            sed -i -E 's/^networkTimeout=.*/networkTimeout=120000/' "$PROP"
-          else
-            echo 'networkTimeout=120000' >> "$PROP"
-          fi
-          cat "$PROP"
+          # The wrapper's services.gradle.org URL redirects to github.com's
+          # release-download endpoint, which is currently returning 504 for these
+          # assets. gh uses the API asset endpoint (release-assets.githubusercontent.com)
+          # instead, which is not affected.
+          rm -rf "$HOME/gradle-8.14.6"
+          gh release download v8.14.6 \
+            --repo gradle/gradle-distributions \
+            --pattern gradle-8.14.6-bin.zip \
+            --dir "$RUNNER_TEMP" \
+            --clobber
+          unzip -q "$RUNNER_TEMP/gradle-8.14.6-bin.zip" -d "$HOME"
+          chmod +x "$HOME/gradle-8.14.6/bin/gradle"
+          "$HOME/gradle-8.14.6/bin/gradle" --version
+
+      - name: Add Gradle to PATH
+        run: |
+          chmod +x "$HOME/gradle-8.14.6/bin/gradle"
+          echo "$HOME/gradle-8.14.6/bin" >> "$GITHUB_PATH"
 
       - uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
-            ~/.gradle/wrapper/dists
             ~/.gradle/notifications
-          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            gradle-${{ runner.os }}-
+            gradle-cache-${{ runner.os }}-
 
       - name: Create google-services.json
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
@@ -67,7 +83,7 @@ jobs:
           GRADLE_OPTS: >-
             -Dorg.gradle.internal.http.connectionTimeout=120000
             -Dorg.gradle.internal.http.socketTimeout=120000
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Rename APK with version
         run: |
