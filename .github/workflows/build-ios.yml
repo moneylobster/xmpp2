@@ -14,11 +14,11 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 23
+          node-version: lts/*
           cache: npm
 
       - run: npm ci
@@ -26,17 +26,52 @@ jobs:
       - run: npx cap add ios
       - run: npx cap sync ios
 
+      - name: Generate app icons and splash
+        run: npx capacitor-assets generate --ios
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-
+
+      - name: Resolve Swift packages
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if xcodebuild -resolvePackageDependencies \
+              -project ios/App/App.xcodeproj \
+              -scheme App \
+              -clonedSourcePackagesDirPath build/SourcePackages; then
+              exit 0
+            fi
+            echo "SwiftPM resolution attempt ${attempt} failed; retrying in 20s..."
+            sleep 20
+          done
+          exit 1
+
       - name: Build unsigned app for device
         run: |
-          xcodebuild archive \
-            -project ios/App/App.xcodeproj \
-            -scheme App \
-            -configuration Release \
-            -archivePath build/App.xcarchive \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+          for attempt in 1 2 3; do
+            if xcodebuild archive \
+              -project ios/App/App.xcodeproj \
+              -scheme App \
+              -configuration Release \
+              -archivePath build/App.xcarchive \
+              -destination 'generic/platform=iOS' \
+              -clonedSourcePackagesDirPath build/SourcePackages \
+              -disableAutomaticPackageResolution \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO; then
+              exit 0
+            fi
+            echo "Archive attempt ${attempt} failed; retrying in 20s..."
+            sleep 20
+          done
+          exit 1
 
       - name: Package unsigned IPA
         run: |
@@ -45,14 +80,14 @@ jobs:
           VERSION=${GITHUB_REF_NAME:-dev}
           cd build && zip -r ../xmpp-chat-${VERSION}.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: App.ipa
           path: xmpp-chat-*.ipa
 
       - name: Create or update release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: xmpp-chat-*.ipa
           generate_release_notes: true

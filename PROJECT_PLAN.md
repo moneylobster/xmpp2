@@ -104,7 +104,7 @@
 - [x] GitHub Actions: manual Android APK build workflow
 - [x] GitHub Actions: manual iOS simulator build workflow
 - [x] android/ and ios/ in .gitignore (generated in CI)
-- [ ] App icon and splash screen assets — deferred
+- [x] App icon and splash screen assets — generated from `resources/` via `@capacitor/assets`
 - [ ] Test on physical devices — deferred
 
 ## Phase 10: Polish & Reliability

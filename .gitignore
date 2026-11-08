@@ -6,5 +6,7 @@ playwright-report/
 *.local
 .DS_Store
 google-services.json
+android/
+ios/
 fpush-docker/
 fpush/

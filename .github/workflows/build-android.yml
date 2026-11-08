@@ -14,14 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 23
+          node-version: lts/*
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -31,26 +31,56 @@ jobs:
       - run: npx cap add android
       - run: npx cap sync android
 
+      - name: Generate app icons and splash
+        run: npx capacitor-assets generate --android
+
+      - uses: gradle/actions/setup-gradle@v6
+
       - name: Create google-services.json
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
 
+      - name: Increase Gradle wrapper network timeout
+        run: |
+          PROP=android/gradle/wrapper/gradle-wrapper.properties
+          # The Capacitor template ships networkTimeout=10000; replace it rather
+          # than only appending when absent.
+          if grep -q '^networkTimeout=' "$PROP"; then
+            sed -i -E 's/^networkTimeout=.*/networkTimeout=120000/' "$PROP"
+          else
+            echo 'networkTimeout=120000' >> "$PROP"
+          fi
+          # The -all distribution is much larger than the -bin one and is not needed here.
+          sed -i 's/-all\.zip/-bin.zip/' "$PROP"
+
       - name: Build APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        env:
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.http.connectionTimeout=120000
+            -Dorg.gradle.internal.http.socketTimeout=120000
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew assembleDebug --no-daemon; then
+              exit 0
+            fi
+            echo "Gradle build attempt ${attempt} failed; retrying in 20s..."
+            sleep 20
+          done
+          exit 1
 
       - name: Rename APK with version
         run: |
           VERSION=${GITHUB_REF_NAME:-dev}
           cp android/app/build/outputs/apk/debug/app-debug.apk xmpp-chat-${VERSION}.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: app-debug.apk
           path: xmpp-chat-*.apk
 
       - name: Create or update release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: xmpp-chat-*.apk
           generate_release_notes: true
