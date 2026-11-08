@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { logout } from '@/xmpp/client';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
 import { getPushServerJid, setPushServerJid, PUSH_SERVER_KEY } from '@/utils/push';
 import './log-viewer';
@@ -44,6 +45,15 @@ export class SettingsView extends LitElement {
 
   private handleBack() {
     this.dispatchEvent(new CustomEvent('back', { bubbles: true, composed: true }));
+  }
+
+  private async handleLogout() {
+    if (!confirm('Sign out of XMPP Chat?')) return;
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Sign out failed:', err);
+    }
   }
 
   static styles = css`
@@ -254,6 +264,23 @@ export class SettingsView extends LitElement {
     .about strong {
       color: var(--color-text, #0f172a);
     }
+
+    .signout-btn {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--color-error-border, #fecaca);
+      border-radius: 0.5rem;
+      background: var(--color-error-bg, #fef2f2);
+      color: var(--color-error, #dc2626);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+    }
+
+    .signout-btn:hover {
+      border-color: var(--color-error, #dc2626);
+    }
   `;
 
   render() {
@@ -346,6 +373,10 @@ export class SettingsView extends LitElement {
           <button class="log-btn" @click=${() => this.showLogViewer = true}>
             Debug Log
           </button>
+        </div>
+
+        <div class="section">
+          <button class="signout-btn" @click=${this.handleLogout}>Sign out</button>
         </div>
       </div>
     `;
