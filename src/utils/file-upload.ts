@@ -51,6 +51,33 @@ export function isAesgcmUrl(url: string): boolean {
   return url.trim().startsWith('aesgcm://');
 }
 
+const FILE_EXTENSION_RE =
+  /\.(jpe?g|png|gif|webp|svg|mp4|webm|ogg|mp3|wav|pdf|zip|rar|7z|docx?|xlsx?|pptx?|txt|csv)(?:[?#]|$)/i;
+
+/** Whether a URL points at a media/file attachment rather than a plain webpage. */
+export function isFileUrl(url: string): boolean {
+  try {
+    const normalized = url.trim().startsWith('aesgcm://')
+      ? url.trim().replace('aesgcm://', 'https://')
+      : url.trim();
+    return FILE_EXTENSION_RE.test(new URL(normalized).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Human-readable filename from an http(s) or aesgcm:// URL. */
+export function fileNameFromUrl(url: string): string {
+  try {
+    const normalized = url.trim().startsWith('aesgcm://')
+      ? url.trim().replace('aesgcm://', 'https://')
+      : url.trim();
+    return decodeURIComponent(new URL(normalized).pathname.split('/').pop() || 'file');
+  } catch {
+    return 'file';
+  }
+}
+
 /** Convert aesgcm:// URL to https:// (stripping the fragment). */
 function aesgcmToHttps(url: string): string {
   return url.replace(/^aesgcm:\/\//, 'https://');

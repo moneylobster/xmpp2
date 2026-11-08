@@ -150,6 +150,13 @@ export class AppShell extends LitElement {
     } catch { /* ignore */ }
   }
 
+  private handleRoomLeft() {
+    this.selection = null;
+    this.mobileShowChat = false;
+    this.viewMode = 'chat';
+    void this.updateUnreadCount();
+  }
+
   private handleBack() {
     if (this.viewMode === 'settings') {
       this.viewMode = 'chat';
@@ -337,7 +344,7 @@ export class AppShell extends LitElement {
     }
 
     if (this.selection.type === 'room') {
-      return html`<muc-view .jid=${this.selection.jid} @back=${this.handleBack} style="flex:1"></muc-view>`;
+      return html`<muc-view .jid=${this.selection.jid} @back=${this.handleBack} @left=${this.handleRoomLeft} style="flex:1"></muc-view>`;
     }
 
     return html`<chat-view .jid=${this.selection.jid} @back=${this.handleBack} style="flex:1"></chat-view>`;

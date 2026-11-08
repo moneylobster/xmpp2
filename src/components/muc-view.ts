@@ -6,7 +6,7 @@ import {
   splitLinks, getSingleHttpUrl, type TextSegment,
 } from '@/utils/chat-utils';
 import {
-  uploadAndSend, validateFile, isImageUrl, formatFileSize,
+  uploadAndSend, validateFile, isImageUrl, isFileUrl, fileNameFromUrl, formatFileSize,
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
@@ -15,6 +15,8 @@ import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import './skeleton-loader';
+import './chat-info';
+import type { InfoMediaItem } from './chat-info';
 
 interface MucMessage {
   id: string;
@@ -55,7 +57,7 @@ export class MucView extends LitElement {
   @state() private roomName = '';
   @state() private roomTopic = '';
   @state() private loading = true;
-  @state() private showOccupants = false;
+  @state() private showInfo = false;
   @state() private omemoActive = false;
   @state() private omemoSupported = false;
   @state() private uploading = false;
@@ -103,6 +105,7 @@ export class MucView extends LitElement {
     this.inputText = '';
     this.omemoActive = false;
     this.omemoSupported = false;
+    this.showInfo = false;
   }
 
   private async openRoom() {
@@ -372,11 +375,15 @@ export class MucView extends LitElement {
     return `hsl(${hue}, 55%, 45%)`;
   }
 
-  private roleIcon(occ: OccupantInfo): string {
-    if (occ.affiliation === 'owner') return '\u{1F451}';
-    if (occ.affiliation === 'admin') return '\u2B50';
-    if (occ.role === 'moderator') return '\u{1F6E1}\uFE0F';
-    return '';
+  private async leaveRoom() {
+    if (!confirm(`Leave ${this.roomName}?`)) return;
+    try {
+      await this.muc?.leave();
+      this.showInfo = false;
+      this.dispatchEvent(new CustomEvent('left', { bubbles: true, composed: true }));
+    } catch (err) {
+      console.error('Failed to leave room:', err);
+    }
   }
 
   static styles = css`
@@ -428,6 +435,21 @@ export class MucView extends LitElement {
       font-weight: 700;
     }
 
+    .header-main {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .header-main:focus-visible {
+      outline: 2px solid var(--color-border-focus);
+      outline-offset: 2px;
+      border-radius: 0.5rem;
+    }
+
     .header-info { flex: 1; min-width: 0; }
 
     .header-name {
@@ -460,21 +482,6 @@ export class MucView extends LitElement {
 
     .omemo-btn:hover { background: var(--color-bg); }
     .omemo-btn.active { border-color: var(--color-success); background: var(--color-success-bg); }
-
-    .occupants-btn {
-      background: none;
-      border: 1px solid var(--color-border);
-      border-radius: 0.375rem;
-      padding: 0.25rem 0.5rem;
-      cursor: pointer;
-      font-size: 0.75rem;
-      color: var(--color-text-secondary);
-      flex-shrink: 0;
-      transition: all var(--duration-fast);
-    }
-
-    .occupants-btn:hover { background: var(--color-bg); }
-    .occupants-btn.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
 
     .body { display: flex; flex: 1; overflow: hidden; }
 
@@ -558,57 +565,6 @@ export class MucView extends LitElement {
     }
 
     .msg.me .msg-meta { justify-content: flex-end; }
-
-    /* Occupants panel */
-    .occupants-panel {
-      width: 200px;
-      background: var(--color-bg-card);
-      border-left: 1px solid var(--color-border);
-      overflow-y: auto;
-      flex-shrink: 0;
-    }
-
-    .occ-header {
-      padding: 0.75rem;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--color-text-muted);
-      border-bottom: 1px solid var(--color-border);
-    }
-
-    .occ {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-    }
-
-    .occ-dot {
-      width: 0.4375rem;
-      height: 0.4375rem;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .occ-nick {
-      font-size: 0.8125rem;
-      color: var(--color-text-secondary);
-      flex: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .occ-role {
-      font-size: 0.6875rem;
-      flex-shrink: 0;
-    }
-
-    @media (max-width: 768px) {
-      .occupants-panel { display: none; }
-    }
 
     .loading {
       display: flex;
@@ -838,6 +794,27 @@ export class MucView extends LitElement {
     );
   }
 
+  private get mediaItems(): InfoMediaItem[] {
+    const items: InfoMediaItem[] = [];
+    const seen = new Set<string>();
+    for (const msg of this.messages) {
+      const body = msg.body.trim();
+      if (isAesgcmUrl(body)) {
+        const url = this.decryptedCache.get(body);
+        if (typeof url === 'string' && !seen.has(body)) {
+          seen.add(body);
+          items.push({ url, name: fileNameFromUrl(body), isImage: isImageUrl(body) });
+        }
+        continue;
+      }
+      if (/^https?:\/\//i.test(body) && !/\s/.test(body) && isFileUrl(body) && !seen.has(body)) {
+        seen.add(body);
+        items.push({ url: body, name: fileNameFromUrl(body), isImage: isImageUrl(body) });
+      }
+    }
+    return items;
+  }
+
   private renderMessages() {
     const items: TemplateResult[] = [];
     let lastDateKey = '';
@@ -872,10 +849,24 @@ export class MucView extends LitElement {
     return html`
       <div class="header">
         <button class="back-btn" @click=${this.handleBack} aria-label="Go back">&larr;</button>
-        <div class="header-icon">#</div>
-        <div class="header-info">
-          <div class="header-name">${this.roomName}</div>
-          ${this.roomTopic ? html`<div class="header-topic">${this.roomTopic}</div>` : nothing}
+        <div
+          class="header-main"
+          role="button"
+          tabindex="0"
+          aria-label="Group info"
+          @click=${() => (this.showInfo = true)}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              this.showInfo = true;
+            }
+          }}
+        >
+          <div class="header-icon">#</div>
+          <div class="header-info">
+            <div class="header-name">${this.roomName}</div>
+            ${this.roomTopic ? html`<div class="header-topic">${this.roomTopic}</div>` : nothing}
+          </div>
         </div>
         <button
           class="omemo-btn ${this.omemoActive ? 'active' : ''}"
@@ -884,13 +875,6 @@ export class MucView extends LitElement {
           aria-label="${this.omemoActive ? 'Disable OMEMO' : 'Enable OMEMO'}"
         >
           ${this.omemoActive ? '\u{1F512}' : '\u{1F513}'}
-        </button>
-        <button
-          class="occupants-btn ${this.showOccupants ? 'active' : ''}"
-          @click=${() => (this.showOccupants = !this.showOccupants)}
-          aria-label="Toggle members panel"
-        >
-          ${this.occupants.length} members
         </button>
       </div>
 
@@ -913,25 +897,6 @@ export class MucView extends LitElement {
                     </div>`
                   : this.renderMessages()}
               </div>
-              ${this.showOccupants
-                ? html`
-                    <div class="occupants-panel" role="complementary" aria-label="Room members">
-                      <div class="occ-header">Members (${this.occupants.length})</div>
-                      ${this.occupants.map(
-                        (o) => html`
-                          <div class="occ" title="${o.jid || o.nick}">
-                            <span
-                              class="occ-dot"
-                              style="background: ${o.presence === 'online' ? '#22c55e' : '#94a3b8'}"
-                            ></span>
-                            <span class="occ-nick">${o.nick}</span>
-                            <span class="occ-role">${this.roleIcon(o)}</span>
-                          </div>
-                        `,
-                      )}
-                    </div>
-                  `
-                : nothing}
             </div>
           `}
 
@@ -974,6 +939,25 @@ export class MucView extends LitElement {
           </svg>
         </button>
       </div>
+
+      ${this.showInfo
+        ? html`
+            <chat-info
+              title=${this.roomName}
+              subtitle=${this.roomTopic}
+              jid=${this.jid}
+              .isGroup=${true}
+              .canLeave=${true}
+              .members=${this.occupants}
+              .media=${this.mediaItems}
+              .omemoActive=${this.omemoActive}
+              .omemoSupported=${this.omemoSupported}
+              @close=${() => (this.showInfo = false)}
+              @toggle-omemo=${this.toggleOmemo}
+              @leave=${this.leaveRoom}
+            ></chat-info>
+          `
+        : nothing}
     `;
   }
 }

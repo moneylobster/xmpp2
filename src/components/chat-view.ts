@@ -7,7 +7,7 @@ import {
   splitLinks, getSingleHttpUrl, type TextSegment,
 } from '@/utils/chat-utils';
 import {
-  uploadAndSend, validateFile, isImageUrl, formatFileSize,
+  uploadAndSend, validateFile, isImageUrl, isFileUrl, fileNameFromUrl, formatFileSize,
   getFilesFromPaste, getFilesFromDrop, isAesgcmUrl, decryptAesgcmUrl,
   type UploadProgress,
 } from '@/utils/file-upload';
@@ -16,6 +16,8 @@ import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import './skeleton-loader';
+import './chat-info';
+import type { InfoMediaItem } from './chat-info';
 
 interface MessageInfo {
   id: string;
@@ -52,6 +54,7 @@ export class ChatView extends LitElement {
   @state() private uploadProgress = 0;
   @state() private uploadError = '';
   @state() private dragOver = false;
+  @state() private showInfo = false;
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
@@ -96,6 +99,7 @@ export class ChatView extends LitElement {
     this.restoringScroll = false;
     this.omemoActive = false;
     this.omemoSupported = false;
+    this.showInfo = false;
   }
 
   private async openChat() {
@@ -459,6 +463,21 @@ export class ChatView extends LitElement {
       font-weight: 600;
       color: var(--color-avatar-text-light);
       flex-shrink: 0;
+    }
+
+    .header-main {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .header-main:focus-visible {
+      outline: 2px solid var(--color-border-focus);
+      outline-offset: 2px;
+      border-radius: 0.5rem;
     }
 
     .header-info { flex: 1; min-width: 0; }
@@ -913,6 +932,27 @@ export class ChatView extends LitElement {
     return items;
   }
 
+  private get mediaItems(): InfoMediaItem[] {
+    const items: InfoMediaItem[] = [];
+    const seen = new Set<string>();
+    for (const msg of this.messages) {
+      const body = msg.body.trim();
+      if (isAesgcmUrl(body)) {
+        const url = this.decryptedCache.get(body);
+        if (typeof url === 'string' && !seen.has(body)) {
+          seen.add(body);
+          items.push({ url, name: fileNameFromUrl(body), isImage: isImageUrl(body) });
+        }
+        continue;
+      }
+      if (/^https?:\/\//i.test(body) && !/\s/.test(body) && isFileUrl(body) && !seen.has(body)) {
+        seen.add(body);
+        items.push({ url: body, name: fileNameFromUrl(body), isImage: isImageUrl(body) });
+      }
+    }
+    return items;
+  }
+
   render() {
     const initials = this.contactName
       .split(/[\s@.]+/)
@@ -923,12 +963,26 @@ export class ChatView extends LitElement {
     return html`
       <div class="header">
         <button class="back-btn" @click=${this.handleBack} aria-label="Go back">&larr;</button>
-        <div class="header-avatar">${initials}</div>
-        <div class="header-info">
-          <div class="header-name">${this.contactName}</div>
-          <div class="header-status">
-            <span class="header-status-dot" style="background: ${this.presenceColor}"></span>
-            <span style="color: ${this.presenceColor}">${this.presenceText}</span>
+        <div
+          class="header-main"
+          role="button"
+          tabindex="0"
+          aria-label="Conversation info"
+          @click=${() => (this.showInfo = true)}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              this.showInfo = true;
+            }
+          }}
+        >
+          <div class="header-avatar">${initials}</div>
+          <div class="header-info">
+            <div class="header-name">${this.contactName}</div>
+            <div class="header-status">
+              <span class="header-status-dot" style="background: ${this.presenceColor}"></span>
+              <span style="color: ${this.presenceColor}">${this.presenceText}</span>
+            </div>
           </div>
         </div>
         <button
@@ -1012,6 +1066,21 @@ export class ChatView extends LitElement {
           </svg>
         </button>
       </div>
+
+      ${this.showInfo
+        ? html`
+            <chat-info
+              title=${this.contactName}
+              subtitle=${this.presenceText}
+              jid=${this.jid}
+              .media=${this.mediaItems}
+              .omemoActive=${this.omemoActive}
+              .omemoSupported=${this.omemoSupported}
+              @close=${() => (this.showInfo = false)}
+              @toggle-omemo=${this.toggleOmemo}
+            ></chat-info>
+          `
+        : nothing}
     `;
   }
 }
