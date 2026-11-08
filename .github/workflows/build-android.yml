@@ -34,6 +34,15 @@ jobs:
       - name: Generate app icons and splash
         run: npx capacitor-assets generate --android
 
+      - name: Use Maven Central mirror
+        run: |
+          # Maven Central is redirecting some artifacts to github.com Releases,
+          # which is currently returning 504. Google's Maven Central mirror serves
+          # the same artifacts directly.
+          find android -name '*.gradle' -print0 | xargs -0 sed -i \
+            's#mavenCentral()#maven { url = "https://maven-central.storage-download.googleapis.com/maven2/" }#g'
+          grep -R "maven-central.storage-download" android | head -5
+
       - name: Cache Gradle distribution
         id: gradle-dist
         uses: actions/cache@v6
