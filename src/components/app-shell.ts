@@ -4,6 +4,7 @@ import { getApi, getConnectionStatus } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
 import { shouldCountUnread, incrementUnread, getUnreadCount, clearUnread } from '@/utils/unread';
 import { isMuted } from '@/utils/preferences';
+import { getSavedPresence, setPresence, presenceLabel, type PresenceShow } from '@/utils/presence';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
 import './chat-list';
@@ -26,6 +27,8 @@ export class AppShell extends LitElement {
   @state() private viewMode: ViewMode = 'chat';
   @state() private totalUnread = 0;
   @state() private connectionStatus: ConnectionStatus = getConnectionStatus();
+  @state() private presence: PresenceShow = getSavedPresence();
+  @state() private presenceMenu = false;
 
   private cleanups: Array<() => void> = [];
   private originalTitle = document.title;
@@ -42,6 +45,7 @@ export class AppShell extends LitElement {
     // Connection status toasts
     this.cleanups.push(
       events.on(CONNECTION_STATUS_CHANGED, (s: ConnectionStatus) => {
+        if (s === 'connected') setPresence(this.presence);
         this.connectionStatus = s;
         if (s === 'connected') toast.success('Connected');
         else if (s === 'disconnected') toast.warning('Disconnected');
@@ -256,7 +260,58 @@ export class AppShell extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: relative;
     }
+
+    .status-badge {
+      border: none;
+      background: none;
+      font: inherit;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .presence-menu {
+      position: absolute;
+      right: 1rem;
+      top: 100%;
+      z-index: 20;
+      min-width: 10rem;
+      padding: 0.25rem;
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: 0.5rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .presence-option {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      border: none;
+      background: none;
+      color: var(--color-text);
+      text-align: left;
+      padding: 0.5rem;
+      border-radius: 0.375rem;
+      font-size: 0.8125rem;
+      cursor: pointer;
+    }
+
+    .presence-option:hover,
+    .presence-option.active { background: var(--color-bg-hover); }
+
+    .presence-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+
+    .presence-dot.away { background: #f59e0b; }
+    .presence-dot.xa { background: #f97316; }
+    .presence-dot.dnd { background: #ef4444; }
 
     .user-jid {
       font-size: 0.75rem;
@@ -395,10 +450,24 @@ export class AppShell extends LitElement {
         </div>
         <div class="user-info">
           <p class="user-jid">${this.userJid}</p>
-          <span class="status-badge" style="color: ${this.statusColor}">
+          <button class="status-badge" style="color: ${this.statusColor}"
+            @click=${() => (this.presenceMenu = !this.presenceMenu)}
+            aria-label="Set presence" aria-expanded=${this.presenceMenu}>
             <span class="status-dot" style="background: ${this.statusColor}"></span>
             ${this.statusText}
-          </span>
+          </button>
+          ${this.presenceMenu ? html`
+            <div class="presence-menu" role="menu">
+              ${(['online', 'away', 'xa', 'dnd'] as PresenceShow[]).map((p) => html`
+                <button class="presence-option ${this.presence === p ? 'active' : ''}"
+                  role="menuitem"
+                  @click=${() => { this.presence = p; this.presenceMenu = false; setPresence(p); }}>
+                  <span class="presence-dot ${p}"></span>
+                  ${presenceLabel(p)}
+                </button>
+              `)}
+            </div>
+          ` : nothing}
         </div>
         <div class="sidebar-content">
           <chat-list

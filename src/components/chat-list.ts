@@ -5,6 +5,7 @@ import { getApi, getConverseInternal } from '@/xmpp/client';
 import { getMessageBody } from '@/utils/chat-utils';
 import { getUnreadCount, clearUnread, type ChatboxLike } from '@/utils/unread';
 import { isMuted, isPinned, isArchived } from '@/utils/preferences';
+import { getAvatar } from '@/utils/avatar';
 import './skeleton-loader';
 
 type ChatKind = 'contact' | 'room';
@@ -76,13 +77,6 @@ function getTypingText(chat: ChatModel): string {
     if (Array.isArray(value) && value.includes('composing')) return `${key} is typing…`;
   }
   return '';
-}
-
-function getAvatar(model: unknown): string {
-  if (!model || typeof model !== 'object' || !('get' in model) || typeof model.get !== 'function') return '';
-  const image = model.get('image');
-  const type = model.get('image_type') || 'image/png';
-  return typeof image === 'string' && image ? `data:${type};base64,${image}` : '';
 }
 
 @customElement('chat-list')

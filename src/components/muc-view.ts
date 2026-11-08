@@ -15,6 +15,7 @@ import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import { getReply } from '@/utils/replies';
+import { getAvatar } from '@/utils/avatar';
 import { getReactions, sendReaction, type ReactionSummary } from '@/utils/reactions';
 import { toast } from './notification-toast';
 import {
@@ -77,6 +78,7 @@ export class MucView extends LitElement {
   @state() private inputText = '';
   @state() private roomName = '';
   @state() private roomTopic = '';
+  @state() private avatarUrl = '';
   @state() private loading = true;
   @state() private showInfo = false;
   @state() private omemoActive = false;
@@ -148,6 +150,7 @@ export class MucView extends LitElement {
     this.lightboxUrl = '';
     this.lightboxName = '';
     this.emojiOpen = false;
+    this.avatarUrl = '';
   }
 
   private openLightbox(url: string, name: string) {
@@ -200,6 +203,7 @@ export class MucView extends LitElement {
 
       this.roomName = this.muc.get('name') || this.jid.split('@')[0];
       this.roomTopic = this.muc.get('subject')?.text || '';
+      this.avatarUrl = getAvatar(this.muc.vcard);
 
       if (this.muc.messages?.fetched) {
         await this.muc.messages.fetched;
@@ -632,6 +636,13 @@ export class MucView extends LitElement {
       color: var(--color-primary);
       flex-shrink: 0;
       font-weight: 700;
+      overflow: hidden;
+    }
+
+    .header-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .header-main {
@@ -1284,7 +1295,9 @@ export class MucView extends LitElement {
             }
           }}
         >
-          <div class="header-icon">#</div>
+          <div class="header-icon">
+            ${this.avatarUrl ? html`<img src=${this.avatarUrl} alt="" />` : '#'}
+          </div>
           <div class="header-info">
             <div class="header-name">${this.roomName}</div>
             ${this.roomTopic ? html`<div class="header-topic">${this.roomTopic}</div>` : nothing}

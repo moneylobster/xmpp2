@@ -16,6 +16,7 @@ import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import { getReply } from '@/utils/replies';
+import { getAvatar } from '@/utils/avatar';
 import { getReactions, sendReaction, type ReactionSummary } from '@/utils/reactions';
 import { toast } from './notification-toast';
 import {
@@ -64,6 +65,7 @@ export class ChatView extends LitElement {
   @state() private inputText = '';
   @state() private contactName = '';
   @state() private contactPresence = 'offline';
+  @state() private avatarUrl = '';
   @state() private theirChatState = '';
   @state() private loading = true;
   @state() private loadingOlder = false;
@@ -141,6 +143,7 @@ export class ChatView extends LitElement {
     this.lightboxUrl = '';
     this.lightboxName = '';
     this.emojiOpen = false;
+    this.avatarUrl = '';
   }
 
   private openLightbox(url: string, name: string) {
@@ -162,6 +165,7 @@ export class ChatView extends LitElement {
       const contact = await api.contacts.get(this.jid);
       if (contact) {
         this.contactName = contact.getDisplayName() || this.jid;
+        this.avatarUrl = getAvatar(contact.vcard);
         this.contactPresence = contact.getStatus?.() || contact.presence?.getStatus?.() || 'offline';
 
         const presHandler = () => {
@@ -660,6 +664,13 @@ export class ChatView extends LitElement {
       font-weight: 600;
       color: var(--color-avatar-text-light);
       flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .header-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .header-main {
@@ -1391,7 +1402,9 @@ export class ChatView extends LitElement {
             }
           }}
         >
-          <div class="header-avatar">${initials}</div>
+          <div class="header-avatar">
+            ${this.avatarUrl ? html`<img src=${this.avatarUrl} alt="" />` : initials}
+          </div>
           <div class="header-info">
             <div class="header-name">${this.contactName}</div>
             <div class="header-status">
