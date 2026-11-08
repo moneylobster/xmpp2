@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
 import { customElement, state, property, query } from 'lit/decorators.js';
 import { getApi } from '@/xmpp/client';
 import { getMessageBody, formatTime, dateKey, formatDateLabel, trackOmemo } from '@/utils/chat-utils';
@@ -8,6 +8,9 @@ import {
   type UploadProgress,
 } from '@/utils/file-upload';
 import { hapticLight } from '@/utils/haptics';
+import { clearUnread } from '@/utils/unread';
+import { autoResizeTextarea } from '@/utils/textarea';
+import { suppressOwnMessageNotifications } from '@/utils/push';
 import './skeleton-loader';
 
 interface MucMessage {
@@ -31,6 +34,15 @@ interface OccupantInfo {
   presence: string;
 }
 
+interface MessageModel {
+  get(attr: string): unknown;
+  cid?: string;
+}
+
+interface OccupantModel {
+  get(attr: string): unknown;
+}
+
 @customElement('muc-view')
 export class MucView extends LitElement {
   @property({ type: String }) jid = '';
@@ -50,6 +62,7 @@ export class MucView extends LitElement {
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
+  @query('#message-input') private inputEl!: HTMLTextAreaElement;
 
   private muc: any = null;
   private cleanups: Array<() => void> = [];
@@ -97,7 +110,13 @@ export class MucView extends LitElement {
     try {
       // Always use open() to ensure the room is joined on the server
       this.muc = await api.rooms.open(this.jid, {}, true);
-      if (!this.muc) return;
+      if (!this.muc) {
+        this.loading = false;
+        return;
+      }
+
+      // Clear the badge immediately; the join/MAM fetch below can take a while.
+      void clearUnread(this.muc);
 
       // Wait for room to be fully joined on the server
       if (this.muc.occupants?.length === 0) {
@@ -128,18 +147,17 @@ export class MucView extends LitElement {
       this.loadOccupants();
       this.loading = false;
       this.scrollToBottom();
+      this.updateComplete.then(() => autoResizeTextarea(this.inputEl));
 
-      // Clear unread count when room is opened
-      if (this.muc.get('num_unread') > 0) {
-        this.muc.set('num_unread', 0);
-      }
+      // MAM backfill during the join can bump the counters again.
+      void clearUnread(this.muc);
 
       const msgHandler = () => {
         this.loadMessages();
-        if (this.autoScroll) this.scrollToBottom();
-        // Clear unread since user is viewing this room
-        if (this.muc?.get('num_unread') > 0) {
-          this.muc.set('num_unread', 0);
+        if (this.autoScroll) {
+          this.scrollToBottom();
+          // User is at the bottom and viewing this room, so it is being read.
+          void clearUnread(this.muc);
         }
       };
       this.muc.messages.on('add', msgHandler);
@@ -179,15 +197,16 @@ export class MucView extends LitElement {
     if (!this.muc?.messages) return;
 
     this.messages = this.muc.messages
-      .filter((m: any) => !!m.get('body'))
-      .map((m: any) => {
-        const timeISO = m.get('time') || '';
+      .filter((m: MessageModel) => !!m.get('body'))
+      .map((m: MessageModel) => {
+        const timeISO = String(m.get('time') || '');
         const body = getMessageBody(m);
+        const from = String(m.get('from') || '');
         return {
-          id: m.get('msgid') || m.get('id') || m.cid,
+          id: String(m.get('msgid') || m.get('id') || m.cid || ''),
           body,
           sender: m.get('sender') === 'me' ? 'me' as const : 'them' as const,
-          nick: m.get('nick') || m.get('from')?.split('/').pop() || '?',
+          nick: String(m.get('nick') || '') || from.split('/').pop() || '?',
           time: formatTime(timeISO),
           timeISO,
           dateKey: dateKey(timeISO),
@@ -213,13 +232,13 @@ export class MucView extends LitElement {
     if (!this.muc?.occupants) return;
 
     this.occupants = this.muc.occupants
-      .filter((o: any) => o.get('nick'))
-      .map((o: any) => ({
-        jid: o.get('jid') || '',
-        nick: o.get('nick') || '',
-        role: o.get('role') || 'participant',
-        affiliation: o.get('affiliation') || 'none',
-        presence: o.get('presence') || 'offline',
+      .filter((o: OccupantModel) => !!o.get('nick'))
+      .map((o: OccupantModel) => ({
+        jid: String(o.get('jid') || ''),
+        nick: String(o.get('nick') || ''),
+        role: String(o.get('role') || 'participant'),
+        affiliation: String(o.get('affiliation') || 'none'),
+        presence: String(o.get('presence') || 'offline'),
       }))
       .sort((a: OccupantInfo, b: OccupantInfo) => a.nick.localeCompare(b.nick));
   }
@@ -239,15 +258,25 @@ export class MucView extends LitElement {
   private async sendMessage() {
     const text = this.inputText.trim();
     if (!text || !this.muc) return;
-    this.inputText = '';
     try {
       await this.muc.sendMessage({ body: text });
+      // Only clear after a successful send so a failed send doesn't lose the draft.
+      this.inputText = '';
+      await this.updateComplete;
+      autoResizeTextarea(this.inputEl);
+      suppressOwnMessageNotifications();
       hapticLight();
       this.autoScroll = true;
       this.scrollToBottom();
     } catch (err) {
       console.error('Failed to send message:', err);
     }
+  }
+
+  private handleInput(e: Event) {
+    const target = e.target as HTMLTextAreaElement;
+    this.inputText = target.value;
+    autoResizeTextarea(target);
   }
 
   private handleKeyDown(e: KeyboardEvent) {
@@ -293,9 +322,9 @@ export class MucView extends LitElement {
       });
       this.autoScroll = true;
       this.scrollToBottom();
-    } catch (err: any) {
+    } catch (err) {
       console.error('File upload failed:', err);
-      this.uploadError = err?.message || 'Upload failed';
+      this.uploadError = err instanceof Error ? err.message : 'Upload failed';
       setTimeout(() => (this.uploadError = ''), 4000);
     } finally {
       this.uploading = false;
@@ -786,7 +815,7 @@ export class MucView extends LitElement {
   }
 
   private renderMessages() {
-    const items: any[] = [];
+    const items: TemplateResult[] = [];
     let lastDateKey = '';
 
     for (const msg of this.messages) {
@@ -900,9 +929,10 @@ export class MucView extends LitElement {
         </button>
         <textarea
           rows="1"
+          id="message-input"
           placeholder="Message #${this.roomName}..."
           .value=${this.inputText}
-          @input=${(e: Event) => (this.inputText = (e.target as HTMLTextAreaElement).value)}
+          @input=${this.handleInput}
           @keydown=${this.handleKeyDown}
           @paste=${this.handlePaste}
           aria-label="Message input"

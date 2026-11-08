@@ -1,7 +1,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { getApi } from '@/xmpp/client';
+import { getApi, getConverseInternal } from '@/xmpp/client';
+import { getUnreadCount, type ChatboxLike } from '@/utils/unread';
 import { hapticLight } from '@/utils/haptics';
 import './skeleton-loader';
 
@@ -45,7 +46,7 @@ export class RoomList extends LitElement {
     if (!api) return;
 
     await api.waitUntil('roomsAutoJoined').catch(() => {});
-    this.loadRooms();
+    await this.loadRooms();
     this.loading = false;
 
     const events = ['chatRoomInitialized', 'leaveRoom', 'chatBoxClosed'];
@@ -58,6 +59,16 @@ export class RoomList extends LitElement {
     const msgHandler = () => setTimeout(() => this.loadRooms(), 200);
     api.listen.on('message', msgHandler);
     this.cleanups.push(() => api.listen.not('message', msgHandler));
+
+    // Clearing a badge (or a read marker arriving from another device) changes the
+    // model without emitting a `message` event. Reload on those changes too.
+    const chatboxes = getConverseInternal()?.state?.chatboxes;
+    if (chatboxes?.on) {
+      const unreadHandler = () => this.loadRooms();
+      const unreadEvents = 'change:num_unread change:num_unread_general change:has_activity';
+      chatboxes.on(unreadEvents, unreadHandler);
+      this.cleanups.push(() => chatboxes.off(unreadEvents, unreadHandler));
+    }
   }
 
   private async loadRooms() {
@@ -72,12 +83,20 @@ export class RoomList extends LitElement {
       }
 
       const list = Array.isArray(allRooms) ? allRooms : [allRooms];
-      this.rooms = list.map((r: any) => ({
-        jid: r.get('jid'),
-        name: r.get('name') || r.get('jid').split('@')[0],
-        numUnread: r.get('num_unread') || 0,
-        topic: r.get('subject')?.text || '',
-      }));
+      this.rooms = list.map((r: ChatboxLike) => {
+        const jid = String(r.get('jid') || '');
+        const subject = r.get('subject');
+        const topic =
+          subject && typeof subject === 'object' && 'text' in subject && typeof subject.text === 'string'
+            ? subject.text
+            : '';
+        return {
+          jid,
+          name: String(r.get('name') || jid.split('@')[0]),
+          numUnread: getUnreadCount(r),
+          topic,
+        };
+      });
     } catch {
       // Rooms not ready yet
     }

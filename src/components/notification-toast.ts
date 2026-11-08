@@ -48,17 +48,27 @@ export class NotificationToast extends LitElement {
   }
 
   addToast(t: ToastMessage) {
-    this.toasts = [...this.toasts, t].slice(-5); // max 5
+    const next = [...this.toasts, t];
+    // Drop the oldest toasts (and their timers) once the stack is full.
+    while (next.length > 5) {
+      const dropped = next.shift();
+      if (!dropped) break;
+      clearTimeout(this.timers.get(dropped.id));
+      this.timers.delete(dropped.id);
+    }
+    this.toasts = next;
     const timer = window.setTimeout(() => this.removeToast(t.id), t.duration);
     this.timers.set(t.id, timer);
   }
 
   private removeToast(id: number) {
+    // Ignore duplicate removals (timer + manual dismiss).
+    if (!this.toasts.some((t) => t.id === id && !t.removing)) return;
     // Mark as removing for exit animation
     this.toasts = this.toasts.map((t) =>
       t.id === id ? { ...t, removing: true } : t
     );
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.toasts = this.toasts.filter((t) => t.id !== id);
       this.timers.delete(id);
     }, 200);

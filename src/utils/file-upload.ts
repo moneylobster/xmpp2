@@ -76,13 +76,11 @@ export async function decryptAesgcmUrl(aesgcmUrl: string): Promise<string | null
   try {
     const url = new URL(aesgcmUrl);
     const hash = url.hash.slice(1); // strip #
-    if (hash.length < 88) return null; // need at least 24 (IV) + 64 (key)
+    // XEP-0454 fragment: 12-byte IV (24 hex) followed by 32-byte key (64 hex).
+    if (hash.length < 88 || !/^[0-9a-f]+$/i.test(hash)) return null;
 
-    const keyHex = hash.substring(hash.length - 64);
-    const ivHex = hash.substring(0, hash.length - 64);
-
-    const iv = hexToUint8Array(ivHex);
-    const keyBuf = hexToUint8Array(keyHex);
+    const iv = hexToUint8Array(hash.slice(0, 24));
+    const keyBuf = hexToUint8Array(hash.slice(-64));
 
     // Download the encrypted file via HTTPS (without the fragment)
     // Can't use url.origin because unknown protocols return "null"
@@ -101,8 +99,8 @@ export async function decryptAesgcmUrl(aesgcmUrl: string): Promise<string | null
     const cipher = await response.arrayBuffer();
 
     // Decrypt
-    const cryptoKey = await crypto.subtle.importKey('raw', keyBuf.buffer as ArrayBuffer, 'AES-GCM', false, ['decrypt']);
-    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv.buffer as ArrayBuffer }, cryptoKey, cipher);
+    const cryptoKey = await crypto.subtle.importKey('raw', keyBuf, 'AES-GCM', false, ['decrypt']);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, cipher);
 
     // Determine MIME type from extension
     const filename = url.pathname.split('/').pop() || 'file';
@@ -117,7 +115,7 @@ export async function decryptAesgcmUrl(aesgcmUrl: string): Promise<string | null
   }
 }
 
-function hexToUint8Array(hex: string): Uint8Array {
+function hexToUint8Array(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
@@ -137,77 +135,95 @@ export function formatFileSize(bytes: number): string {
  *
  * We listen to the message model's progress/error attributes for feedback.
  */
+interface UploadMessage {
+  file?: unknown;
+  get(attr: string): unknown;
+  on(event: string, handler: () => void): void;
+  off(event: string, handler: () => void): void;
+}
+
+interface UploadChatbox {
+  sendFiles?(files: File[]): unknown;
+  messages: {
+    on(event: 'add', handler: (message: UploadMessage) => void): void;
+    off(event: 'add', handler: (message: UploadMessage) => void): void;
+  };
+}
+
 export async function uploadAndSend(
-  chatbox: any,
+  chatbox: UploadChatbox,
   file: File,
   onProgress?: (p: UploadProgress) => void,
 ): Promise<void> {
-  if (!chatbox?.sendFiles) throw new Error('File upload not supported');
+  const sendFiles = chatbox?.sendFiles;
+  if (!sendFiles) throw new Error('File upload not supported');
 
   return new Promise<void>((resolve, reject) => {
-    // Listen for the message that sendFiles creates so we can track progress
-    const onAdd = (message: any) => {
-      if (!message.file) return;
+    let message: UploadMessage | null = null;
+    let settled = false;
+    let timeout: number | undefined;
 
-      const onProgressChange = () => {
-        const progress = message.get('progress') || 0;
-        onProgress?.({ loaded: 0, total: 0, percent: Math.round(progress) });
-      };
-
-      const onError = () => {
-        const errorText = message.get('error_text') || message.get('message');
-        cleanup();
-        reject(new Error(errorText || 'Upload failed'));
-      };
-
-      const onUploaded = () => {
-        // Upload complete when 'get' URL is set and body is set
-        if (message.get('get') || message.get('oob_url')) {
-          cleanup();
-          resolve();
-        }
-      };
-
-      const cleanup = () => {
+    function cleanup() {
+      clearTimeout(timeout);
+      if (message) {
         message.off('change:progress', onProgressChange);
         message.off('change:error_type', onError);
         message.off('change:body', onUploaded);
         message.off('change:oob_url', onUploaded);
-        chatbox.messages.off('add', onAdd);
-      };
+      }
+      chatbox.messages.off('add', onAdd);
+    }
 
+    function finish(error?: Error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    }
+
+    function onProgressChange() {
+      if (!message) return;
+      const progress = Number(message.get('progress')) || 0;
+      onProgress?.({ loaded: 0, total: 0, percent: Math.round(progress) });
+    }
+
+    function onError() {
+      const errorText = message?.get('error_text') || message?.get('message');
+      finish(new Error(typeof errorText === 'string' && errorText ? errorText : 'Upload failed'));
+    }
+
+    function onUploaded() {
+      // Upload complete when a 'get' URL is set and the body is populated.
+      if (message && (message.get('get') || message.get('oob_url'))) finish();
+    }
+
+    // Listen for the message that sendFiles creates so we can track progress.
+    function onAdd(added: UploadMessage) {
+      // Ignore unrelated messages and duplicate adds.
+      if (settled || !added.file || message) return;
+      message = added;
       message.on('change:progress', onProgressChange);
       message.on('change:error_type', onError);
       message.on('change:body', onUploaded);
       message.on('change:oob_url', onUploaded);
 
-      // If it errors immediately (e.g. upload service not found)
       if (message.get('error_type')) {
         onError();
-        return;
+      } else if (message.get('body') || message.get('oob_url')) {
+        finish();
       }
+    }
 
-      // If somehow it completed already
-      if (message.get('body') || message.get('oob_url')) {
-        cleanup();
-        resolve();
-        return;
-      }
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        cleanup();
-        reject(new Error('Upload timed out'));
-      }, 5 * 60 * 1000);
-    };
-
+    timeout = window.setTimeout(() => finish(new Error('Upload timed out')), 5 * 60 * 1000);
     chatbox.messages.on('add', onAdd);
 
     try {
-      chatbox.sendFiles([file]);
-    } catch (err: any) {
-      chatbox.messages.off('add', onAdd);
-      reject(err);
+      Promise.resolve(sendFiles([file])).catch((err: unknown) => {
+        finish(err instanceof Error ? err : new Error(String(err)));
+      });
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }

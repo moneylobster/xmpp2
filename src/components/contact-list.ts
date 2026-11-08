@@ -1,8 +1,9 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { getApi } from '@/xmpp/client';
+import { getApi, getConverseInternal } from '@/xmpp/client';
 import { getMessageBody } from '@/utils/chat-utils';
+import { getUnreadCount, type ChatboxLike } from '@/utils/unread';
 import './skeleton-loader';
 
 interface ContactInfo {
@@ -13,6 +14,12 @@ interface ContactInfo {
   numUnread: number;
   subscription: string;
   lastMessage: string;
+}
+
+interface RosterContactLike extends ChatboxLike {
+  getDisplayName?(): string;
+  getStatus?(): string;
+  presence?: { getStatus?(): string };
 }
 
 @customElement('contact-list')
@@ -47,7 +54,7 @@ export class ContactList extends LitElement {
     if (!api) return;
 
     await api.waitUntil('rosterContactsFetched');
-    this.loadContacts();
+    await this.loadContacts();
     this.loading = false;
 
     const events = [
@@ -65,6 +72,15 @@ export class ContactList extends LitElement {
     const msgHandler = () => setTimeout(() => this.loadContacts(), 100);
     api.listen.on('message', msgHandler);
     this.cleanups.push(() => api.listen.not('message', msgHandler));
+
+    // Clearing a badge changes the model without emitting a `message` event.
+    const chatboxes = getConverseInternal()?.state?.chatboxes;
+    if (chatboxes?.on) {
+      const unreadHandler = () => this.loadContacts();
+      const unreadEvents = 'change:num_unread change:num_unread_general';
+      chatboxes.on(unreadEvents, unreadHandler);
+      this.cleanups.push(() => chatboxes.off(unreadEvents, unreadHandler));
+    }
   }
 
   private async loadContacts() {
@@ -86,14 +102,15 @@ export class ContactList extends LitElement {
       try {
         const chats = await api.chats.get();
         const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
-        for (const chat of chatList) {
-          const jid = chat.get('jid');
-          chatUnread.set(jid, chat.get('num_unread') || 0);
-          const lastMsg = chat.messages?.last?.();
+        for (const chat of chatList as ChatboxLike[]) {
+          const jid = String(chat.get('jid') || '');
+          if (!jid) continue;
+          chatUnread.set(jid, getUnreadCount(chat));
+          const lastMsg = (chat as ChatboxLike & { messages?: { last?(): unknown } }).messages?.last?.();
           if (lastMsg) {
             const body = getMessageBody(lastMsg);
             if (body) {
-              const sender = lastMsg.get('sender') === 'me' ? 'You: ' : '';
+              const sender = (lastMsg as ChatboxLike).get('sender') === 'me' ? 'You: ' : '';
               lastMessages.set(jid, sender + body);
             }
           }
@@ -101,21 +118,21 @@ export class ContactList extends LitElement {
       } catch { /* ignore */ }
 
       this.contacts = list
-        .filter((c: any) => {
+        .filter((c: RosterContactLike) => {
           const sub = c.get('subscription');
           return sub === 'both' || sub === 'to' || sub === 'from';
         })
-        .map((c: any) => {
-          const jid = c.get('jid');
+        .map((c: RosterContactLike) => {
+          const jid = String(c.get('jid') || '');
           // Use getStatus() which correctly reads from the presence model
           const presence = c.getStatus?.() || c.presence?.getStatus?.() || 'offline';
           return {
             jid,
-            name: c.getDisplayName() || jid,
+            name: c.getDisplayName?.() || jid,
             presence,
-            status: c.get('status') || '',
+            status: String(c.get('status') || ''),
             numUnread: chatUnread.get(jid) || 0,
-            subscription: c.get('subscription') || 'none',
+            subscription: String(c.get('subscription') || 'none'),
             lastMessage: lastMessages.get(jid) || '',
           };
         })

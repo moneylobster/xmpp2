@@ -1,3 +1,4 @@
+import type { FirebaseMessagingPlugin } from '@capacitor-firebase/messaging';
 import { isNative, isAndroid, isIOS } from './platform';
 import { getApi, getConverseInternal } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED, PUSH_SERVER_NOT_FOUND } from '@/xmpp/events';
@@ -32,7 +33,7 @@ import type { ConnectionStatus } from '@/types';
  */
 
 // -- Configuration --
-const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
+export const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
 // The push node (FCM token) we last successfully registered with <enable>. Persisted
 // so that after the FCM token rotates — including while the app was closed — we can send
 // <disable> for the old node and stop the server pushing to a now-dead token.
@@ -40,6 +41,37 @@ const ENABLED_NODE_KEY = 'xmpp-push-enabled-node';
 const PUSH_SECRET = ''; // Shared secret with push app server (leave empty if not required)
 
 let pushServerJid: string | null = null;
+let notificationClearTimers: number[] = [];
+
+/**
+ * Remove delivered push notifications, retrying briefly because native delivery
+ * can race the event that triggered the clear (especially right after sending).
+ *
+ * This only helps while the app is foregrounded: the OS displays background
+ * pushes before JS runs. Self-sent background pushes must be filtered by the
+ * XMPP server/push gateway.
+ */
+function clearDeliveredNotificationsSoon(): void {
+  if (!isNative()) return;
+
+  const clear = async () => {
+    try {
+      // Dynamic import: the plugin is native-only and pulls `firebase/messaging`,
+      // which vite externalizes for web builds (see vite.config.ts).
+      const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+      await FirebaseMessaging.removeAllDeliveredNotifications();
+    } catch { /* best effort */ }
+  };
+
+  for (const timer of notificationClearTimers) clearTimeout(timer);
+  void clear();
+  notificationClearTimers = [500, 1500, 3000].map((ms) => window.setTimeout(clear, ms));
+}
+
+/** Call after sending a message so the sender's own push is not left on screen. */
+export function suppressOwnMessageNotifications(): void {
+  clearDeliveredNotificationsSoon();
+}
 
 /** Get the active push server JID */
 export function getPushServerJid(): string | null {
@@ -94,12 +126,14 @@ async function discoverPushServer(): Promise<string | null> {
   }
 }
 
-/** Set a custom push server JID (persisted to localStorage) */
+/** Set a custom push server JID (persisted to localStorage). */
 export function setPushServerJid(jid: string) {
   if (jid) {
     localStorage.setItem(PUSH_SERVER_KEY, jid);
+    pushServerJid = jid;
   } else {
     localStorage.removeItem(PUSH_SERVER_KEY);
+    pushServerJid = null;
   }
 }
 
@@ -111,7 +145,7 @@ let reconnectCleanup: (() => void) | null = null;
 // token refresh racing with the reconnect handler) which would otherwise register twice.
 let enablingToken: string | null = null;
 // Kept so we can remove Firebase listeners when the session is torn down on logout.
-let firebaseRef: any = null;
+let firebaseRef: FirebaseMessagingPlugin | null = null;
 
 /**
  * Initialize push notifications on native platforms.
@@ -122,7 +156,7 @@ export async function initPushNotifications() {
   if (pushInitialized) return;
   pushInitialized = true;
 
-  let FirebaseMessaging: any;
+  let FirebaseMessaging: FirebaseMessagingPlugin;
   try {
     const mod = await import('@capacitor-firebase/messaging');
     FirebaseMessaging = mod.FirebaseMessaging;
@@ -184,15 +218,13 @@ export async function initPushNotifications() {
   });
 
   // Push received while app is in foreground — suppress it, user is already in-app
-  FirebaseMessaging.addListener('notificationReceived', async (notification: any) => {
+  FirebaseMessaging.addListener('notificationReceived', async () => {
     console.log('[Push] Push received (foreground, suppressed)');
-    try {
-      await FirebaseMessaging.removeAllDeliveredNotifications();
-    } catch { /* best effort */ }
+    clearDeliveredNotificationsSoon();
   });
 
   // User tapped a notification — clear it and let the app handle navigation
-  FirebaseMessaging.addListener('notificationActionPerformed', async (_event: any) => {
+  FirebaseMessaging.addListener('notificationActionPerformed', async () => {
     console.log('[Push] Notification tapped');
     try {
       await FirebaseMessaging.removeAllDeliveredNotifications();
@@ -313,6 +345,9 @@ export function getFcmToken(): string | null {
 export async function resetPushState(): Promise<void> {
   reconnectCleanup?.();
   reconnectCleanup = null;
+
+  for (const timer of notificationClearTimers) clearTimeout(timer);
+  notificationClearTimers = [];
 
   if (firebaseRef) {
     try {

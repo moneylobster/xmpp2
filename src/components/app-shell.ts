@@ -3,7 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { logout, getApi } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
-import { shouldCountUnread, nextUnread } from '@/utils/unread';
+import { shouldCountUnread, incrementUnread, getUnreadCount, clearUnread } from '@/utils/unread';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
 import './contact-list';
@@ -30,6 +30,7 @@ export class AppShell extends LitElement {
 
   private cleanups: Array<() => void> = [];
   private originalTitle = document.title;
+  private unreadInitialized = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -58,7 +59,7 @@ export class AppShell extends LitElement {
 
     // Track unread messages for tab badge + sound
     if (api) {
-      const msgHandler = (data: any) => this.handleIncomingMessage(data);
+      const msgHandler = (data: unknown) => this.handleIncomingMessage(data);
       api.listen.on('message', msgHandler);
       this.cleanups.push(() => api.listen.not('message', msgHandler));
     }
@@ -71,13 +72,26 @@ export class AppShell extends LitElement {
    * Then recompute totals, which plays the sound + updates the tab badge, and
    * which also picks up Converse's own count when the document was hidden.
    */
-  private handleIncomingMessage(data: any) {
+  private handleIncomingMessage(data: unknown) {
     try {
-      const chatbox = data?.chatbox;
+      const { chatbox, attrs } = data as {
+        chatbox?: { get(attr: string): unknown; ui?: { get(attr: string): unknown } };
+        attrs?: Parameters<typeof shouldCountUnread>[0];
+      };
       const chatJid = chatbox?.get?.('jid');
-      const activeJid = this.selection?.jid ?? null;
-      if (chatbox && shouldCountUnread(data?.attrs, chatJid, activeJid, document.hidden)) {
-        chatbox.set('num_unread', nextUnread(chatbox.get('num_unread')));
+      // On mobile the chat panel is hidden while the sidebar/settings is shown,
+      // so a retained selection is not actually being read.
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      const activeJid =
+        this.viewMode === 'chat' && (!isMobile || this.mobileShowChat)
+          ? this.selection?.jid ?? null
+          : null;
+      // Converse counts messages itself when the chatbox is hidden/scrolled, or
+      // when the document is hidden. Only count the cases it skips.
+      const converseHidden = !!chatbox?.get?.('hidden') || !!chatbox?.ui?.get?.('scrolled');
+      if (chatbox && typeof chatJid === 'string' &&
+          shouldCountUnread(attrs, chatJid, activeJid, document.hidden, converseHidden)) {
+        incrementUnread(chatbox, attrs);
       }
     } catch { /* ignore */ }
     setTimeout(() => this.updateUnreadCount(), 200);
@@ -96,13 +110,12 @@ export class AppShell extends LitElement {
 
     let total = 0;
     try {
+      // `api.chats.get()` returns every chatbox, including MUCs. Do not also add
+      // `api.rooms.get()`: that is the same set filtered to groupchats and would
+      // double-count every room.
       const chats = await api.chats.get();
       const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
-      for (const c of chatList) total += c.get('num_unread') || 0;
-
-      const rooms = await api.rooms.get();
-      const roomList = Array.isArray(rooms) ? rooms : rooms ? [rooms] : [];
-      for (const r of roomList) total += r.get('num_unread') || 0;
+      for (const c of chatList) total += getUnreadCount(c);
     } catch { /* ignore */ }
 
     const prev = this.totalUnread;
@@ -113,38 +126,36 @@ export class AppShell extends LitElement {
       ? `(${total}) ${this.originalTitle}`
       : this.originalTitle;
 
-    // Play sound on new unread
-    if (total > prev && localStorage.getItem(SOUND_KEY) !== 'false') {
+    // Play sound on new unread, but not for counts restored on the first load.
+    if (this.unreadInitialized && total > prev && localStorage.getItem(SOUND_KEY) !== 'false') {
       notificationSound.play().catch(() => {});
     }
+    this.unreadInitialized = true;
   }
 
-  private handleContactSelected(e: CustomEvent) {
+  private async handleContactSelected(e: CustomEvent) {
     this.selection = { type: 'chat', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
     // Clear unread immediately (covers the race before chat-view mounts), then refresh totals.
-    this.clearUnreadFor(e.detail.jid);
-    setTimeout(() => this.updateUnreadCount(), 300);
+    await this.clearUnreadFor(e.detail.jid);
+    await this.updateUnreadCount();
   }
 
-  private handleRoomSelected(e: CustomEvent) {
+  private async handleRoomSelected(e: CustomEvent) {
     this.selection = { type: 'room', jid: e.detail.jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
-    this.clearUnreadFor(e.detail.jid);
-    setTimeout(() => this.updateUnreadCount(), 300);
+    await this.clearUnreadFor(e.detail.jid);
+    await this.updateUnreadCount();
   }
 
-  /** Zero the unread counter for a chat/room so its badge clears on open. */
+  /** Zero the unread counters for a chat/room so its badge clears on open. */
   private async clearUnreadFor(jid: string) {
     const api = getApi();
     if (!api) return;
     try {
-      const chatbox = (await api.chats.get(jid)) || (await api.rooms.get(jid));
-      if (chatbox && (chatbox.get('num_unread') || 0) > 0) {
-        chatbox.set('num_unread', 0);
-      }
+      await clearUnread(await api.chats.get(jid));
     } catch { /* ignore */ }
   }
 

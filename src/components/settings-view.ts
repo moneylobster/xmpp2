@@ -1,11 +1,10 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme';
-import { getPushServerJid, setPushServerJid } from '@/utils/push';
+import { getPushServerJid, setPushServerJid, PUSH_SERVER_KEY } from '@/utils/push';
 import './log-viewer';
 
 const SOUND_KEY = 'xmpp-notification-sound';
-const PUSH_SERVER_KEY = 'xmpp-push-server-jid';
 
 @customElement('settings-view')
 export class SettingsView extends LitElement {
@@ -32,10 +31,12 @@ export class SettingsView extends LitElement {
   }
 
   private handlePushServerChange(e: Event) {
-    const value = (e.target as HTMLInputElement).value.trim();
-    // Allow empty (clears override, reverts to auto-discovery) or validate JID format
+    const input = e.target as HTMLInputElement;
+    const value = input.value.trim();
+    // Allow empty (clears override, reverts to auto-discovery) or validate JID format.
     if (value && !/^[a-zA-Z0-9._-]+(\.[a-zA-Z0-9._-]+)+$/.test(value)) {
-      return; // Reject malformed JID/domain
+      input.value = this.pushServerJid; // Reject malformed JID/domain without leaving stale text.
+      return;
     }
     this.pushServerJid = value;
     setPushServerJid(value);

@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
 import { customElement, state, property, query } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi } from '@/xmpp/client';
@@ -9,6 +9,9 @@ import {
   type UploadProgress,
 } from '@/utils/file-upload';
 import { hapticLight } from '@/utils/haptics';
+import { clearUnread } from '@/utils/unread';
+import { autoResizeTextarea } from '@/utils/textarea';
+import { suppressOwnMessageNotifications } from '@/utils/push';
 import './skeleton-loader';
 
 interface MessageInfo {
@@ -22,6 +25,11 @@ interface MessageInfo {
   isEdited: boolean;
   isEncrypted: boolean;
   decryptedUrl?: string | null;
+}
+
+interface MessageModel {
+  get(attr: string): unknown;
+  cid?: string;
 }
 
 @customElement('chat-view')
@@ -44,6 +52,7 @@ export class ChatView extends LitElement {
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
+  @query('#message-input') private inputEl!: HTMLTextAreaElement;
 
   private chatbox: any = null;
   private cleanups: Array<() => void> = [];
@@ -113,27 +122,29 @@ export class ChatView extends LitElement {
 
     try {
       this.chatbox = await api.chats.open(this.jid, {}, true);
-      if (!this.chatbox) return;
+      if (!this.chatbox) {
+        this.loading = false;
+        return;
+      }
 
       if (this.chatbox.messages?.fetched) {
         await this.chatbox.messages.fetched;
       }
 
-      // Clear unread count when chat is opened
-      if (this.chatbox.get('num_unread') > 0) {
-        this.chatbox.set('num_unread', 0);
-      }
+      // Clear unread count when chat is opened.
+      void clearUnread(this.chatbox);
 
       this.loadMessages();
       this.loading = false;
       this.scrollToBottom();
+      this.updateComplete.then(() => autoResizeTextarea(this.inputEl));
 
       const addHandler = () => {
         this.loadMessages();
-        if (this.autoScroll) this.scrollToBottom();
-        // Clear unread since user is viewing this chat
-        if (this.chatbox?.get('num_unread') > 0) {
-          this.chatbox.set('num_unread', 0);
+        if (this.autoScroll) {
+          this.scrollToBottom();
+          // User is at the bottom and viewing this chat, so it is being read.
+          void clearUnread(this.chatbox);
         }
       };
       this.chatbox.messages.on('add', addHandler);
@@ -168,16 +179,16 @@ export class ChatView extends LitElement {
     if (!this.chatbox?.messages) return;
 
     this.messages = this.chatbox.messages
-      .filter((m: any) => {
+      .filter((m: MessageModel) => {
         const body = m.get('body');
         const type = m.get('type');
-        return body && (type === 'chat' || type === 'normal' || !type);
+        return !!body && (type === 'chat' || type === 'normal' || !type);
       })
-      .map((m: any) => {
-        const timeISO = m.get('time') || '';
+      .map((m: MessageModel) => {
+        const timeISO = String(m.get('time') || '');
         const body = getMessageBody(m);
         return {
-          id: m.get('msgid') || m.get('id') || m.cid,
+          id: String(m.get('msgid') || m.get('id') || m.cid || ''),
           body,
           sender: m.get('sender') === 'me' ? 'me' as const : 'them' as const,
           time: formatTime(timeISO),
@@ -270,9 +281,13 @@ export class ChatView extends LitElement {
     const text = this.inputText.trim();
     if (!text || !this.chatbox) return;
 
-    this.inputText = '';
     try {
       await this.chatbox.sendMessage({ body: text });
+      // Only clear after a successful send so a failed send doesn't lose the draft.
+      this.inputText = '';
+      await this.updateComplete;
+      autoResizeTextarea(this.inputEl);
+      suppressOwnMessageNotifications();
       hapticLight();
       this.autoScroll = true;
       this.scrollToBottom();
@@ -289,7 +304,9 @@ export class ChatView extends LitElement {
   }
 
   private handleInput(e: Event) {
-    this.inputText = (e.target as HTMLTextAreaElement).value;
+    const target = e.target as HTMLTextAreaElement;
+    this.inputText = target.value;
+    autoResizeTextarea(target);
     try {
       this.chatbox?.setChatState('composing');
     } catch {
@@ -333,9 +350,9 @@ export class ChatView extends LitElement {
       });
       this.autoScroll = true;
       this.scrollToBottom();
-    } catch (err: any) {
+    } catch (err) {
       console.error('File upload failed:', err);
-      this.uploadError = err?.message || 'Upload failed';
+      this.uploadError = err instanceof Error ? err.message : 'Upload failed';
       setTimeout(() => (this.uploadError = ''), 4000);
     } finally {
       this.uploading = false;
@@ -854,7 +871,7 @@ export class ChatView extends LitElement {
   }
 
   private renderMessages() {
-    const items: any[] = [];
+    const items: TemplateResult[] = [];
     let lastDateKey = '';
 
     for (const msg of this.messages) {
@@ -949,6 +966,7 @@ export class ChatView extends LitElement {
           </svg>
         </button>
         <textarea
+          id="message-input"
           rows="1"
           placeholder="Type a message..."
           .value=${this.inputText}
