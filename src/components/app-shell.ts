@@ -161,7 +161,8 @@ export class AppShell extends LitElement {
     const api = getApi();
     if (!api) return;
     try {
-      await clearUnread(await api.chats.get(jid));
+      const chat = (await api.chats.get(jid)) ?? (await api.rooms?.get?.(jid));
+      await clearUnread(chat);
     } catch { /* ignore */ }
   }
 
