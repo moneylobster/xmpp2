@@ -1,6 +1,18 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
+import { getApi } from '@/xmpp/client';
 import { toast } from './notification-toast';
+
+interface DeviceModel {
+  get(attr: string): unknown;
+  save?(attrs: Record<string, unknown>): unknown;
+}
+
+interface DeviceInfo {
+  id: string;
+  trusted: boolean;
+  model: DeviceModel;
+}
 
 export interface InfoMember {
   nick: string;
@@ -29,6 +41,42 @@ export class ChatInfo extends LitElement {
   @property({ type: Boolean }) pinned = false;
   @property({ type: Boolean }) muted = false;
   @property({ type: Boolean }) archived = false;
+
+  @state() private showDevices = false;
+  @state() private devices: DeviceInfo[] = [];
+
+  private async loadDevices() {
+    const api = getApi();
+    if (!api?.omemo?.devices || !this.jid) return;
+    try {
+      const collection = await api.omemo.devices.get(this.jid);
+      const models: DeviceModel[] = Array.isArray(collection)
+        ? collection
+        : (collection?.models ?? []);
+      this.devices = models.map((model) => ({
+        id: String(model.get('id') || ''),
+        trusted: !!model.get('trusted'),
+        model,
+      }));
+    } catch (err) {
+      console.error('Failed to load OMEMO devices:', err);
+    }
+  }
+
+  private async toggleDevices() {
+    this.showDevices = !this.showDevices;
+    if (this.showDevices && this.devices.length === 0) await this.loadDevices();
+  }
+
+  private async toggleTrust(device: DeviceInfo) {
+    try {
+      await device.model.save?.({ trusted: !device.trusted });
+      await this.loadDevices();
+    } catch (err) {
+      console.error('Failed to update device trust:', err);
+      toast.error('Could not update trust');
+    }
+  }
 
   private close() {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
@@ -224,6 +272,28 @@ export class ChatInfo extends LitElement {
 
     .action:hover { background: var(--color-bg-input); }
 
+    .device-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+      margin-top: 0.5rem;
+    }
+
+    .device-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .device-id {
+      font-size: 0.75rem;
+      color: var(--color-text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .action.active {
       border-color: var(--color-success);
       background: var(--color-success-bg);
@@ -372,6 +442,30 @@ export class ChatInfo extends LitElement {
                 </button>`
               : nothing}
           </div>
+
+          ${this.omemoSupported ? html`
+            <div class="section">
+              <h3>Encryption devices</h3>
+              <button class="action" @click=${this.toggleDevices}>
+                ${this.showDevices ? 'Hide devices' : 'Device trust'}
+              </button>
+              ${this.showDevices ? html`
+                ${this.devices.length === 0
+                  ? html`<p class="muted">No devices found</p>`
+                  : html`<div class="device-list">
+                      ${this.devices.map((device) => html`
+                        <div class="device-row">
+                          <span class="device-id">${device.id}</span>
+                          <button class="action ${device.trusted ? 'active' : ''}"
+                            @click=${() => this.toggleTrust(device)}>
+                            ${device.trusted ? 'Trusted' : 'Trust'}
+                          </button>
+                        </div>
+                      `)}
+                    </div>`}
+              ` : nothing}
+            </div>
+          ` : nothing}
 
           <div class="section">
             <h3>Media</h3>
