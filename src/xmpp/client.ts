@@ -102,7 +102,7 @@ export async function login(config: XMPPConfig): Promise<void> {
       keepalive: true,
       allow_non_roster_messaging: true,
       trusted: true,
-      omemo_default: false,
+      omemo_default: true,
     };
 
     if (config.websocketUrl) {
@@ -156,7 +156,7 @@ export async function tryAutoLogin(): Promise<boolean> {
       reuse_scram_keys: true,
       allow_non_roster_messaging: true,
       trusted: true,
-      omemo_default: false,
+      omemo_default: true,
     }).catch(() => { clearTimeout(timer); cleanup(); settle(false); });
   });
 }
