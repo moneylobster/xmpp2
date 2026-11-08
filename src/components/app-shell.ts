@@ -5,9 +5,8 @@ import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
 import { shouldCountUnread, incrementUnread, getUnreadCount, clearUnread } from '@/utils/unread';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
-import './contact-list';
+import './chat-list';
 import './chat-view';
-import './room-list';
 import './muc-view';
 import './settings-view';
 import './notification-toast';
@@ -132,20 +131,13 @@ export class AppShell extends LitElement {
     this.unreadInitialized = true;
   }
 
-  private async handleContactSelected(e: CustomEvent) {
-    this.selection = { type: 'chat', jid: e.detail.jid };
+  private async handleChatSelected(e: CustomEvent) {
+    const { type, jid } = e.detail as { type: 'chat' | 'room'; jid: string };
+    this.selection = { type, jid };
     this.mobileShowChat = true;
     this.viewMode = 'chat';
-    // Clear unread immediately (covers the race before chat-view mounts), then refresh totals.
-    await this.clearUnreadFor(e.detail.jid);
-    await this.updateUnreadCount();
-  }
-
-  private async handleRoomSelected(e: CustomEvent) {
-    this.selection = { type: 'room', jid: e.detail.jid };
-    this.mobileShowChat = true;
-    this.viewMode = 'chat';
-    await this.clearUnreadFor(e.detail.jid);
+    // Clear unread immediately (covers the race before the chat view mounts), then refresh totals.
+    await this.clearUnreadFor(jid);
     await this.updateUnreadCount();
   }
 
@@ -260,25 +252,10 @@ export class AppShell extends LitElement {
 
     .sidebar-content {
       flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .contacts-section {
-      flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
-    }
-
-    .rooms-section {
-      border-top: 1px solid var(--color-border-sidebar);
-      max-height: 40%;
-      min-height: 0;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
+      overflow: hidden;
     }
 
     .logout-btn {
@@ -406,18 +383,10 @@ export class AppShell extends LitElement {
           </span>
         </div>
         <div class="sidebar-content">
-          <div class="contacts-section">
-            <contact-list
-              .selectedJid=${this.selection?.type === 'chat' ? this.selection.jid : ''}
-              @contact-selected=${this.handleContactSelected}
-            ></contact-list>
-          </div>
-          <div class="rooms-section">
-            <room-list
-              .selectedJid=${this.selection?.type === 'room' ? this.selection.jid : ''}
-              @room-selected=${this.handleRoomSelected}
-            ></room-list>
-          </div>
+          <chat-list
+            .selectedJid=${this.selection?.jid ?? ''}
+            @chat-selected=${this.handleChatSelected}
+          ></chat-list>
         </div>
       </aside>
 
