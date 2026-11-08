@@ -3,7 +3,8 @@ import { customElement, state, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { getApi, getConverseInternal } from '@/xmpp/client';
 import { getMessageBody } from '@/utils/chat-utils';
-import { getUnreadCount, type ChatboxLike } from '@/utils/unread';
+import { getUnreadCount, clearUnread, type ChatboxLike } from '@/utils/unread';
+import { isMuted, isPinned, isArchived } from '@/utils/preferences';
 import './skeleton-loader';
 
 type ChatKind = 'contact' | 'room';
@@ -19,12 +20,18 @@ interface ChatInfo {
   lastMessage: string;
   searchText: string;
   topic: string;
+  typing: string;
+  avatar: string;
+  muted: boolean;
+  pinned: boolean;
+  archived: boolean;
 }
 
 interface RosterContactLike extends ChatboxLike {
   getDisplayName?(): string;
   getStatus?(): string;
   presence?: { getStatus?(): string };
+  vcard?: { get(attr: string): unknown };
 }
 
 interface ChatModel extends ChatboxLike {
@@ -32,7 +39,11 @@ interface ChatModel extends ChatboxLike {
     last?(): unknown;
     models?: unknown[];
   };
+  notifications?: { toJSON?(): unknown };
+  vcard?: { get(attr: string): unknown };
 }
+
+type RoomModel = ChatboxLike & { vcard?: { get(attr: string): unknown } };
 
 function toArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -55,6 +66,25 @@ function getLastMessage(chat: ChatModel): string {
   return sender + body;
 }
 
+function getTypingText(chat: ChatModel): string {
+  const data = chat.notifications?.toJSON?.();
+  if (!data || typeof data !== 'object') return '';
+  const record = data as Record<string, unknown>;
+  if (record.chat_state === 'composing') return 'typing…';
+  for (const [key, value] of Object.entries(record)) {
+    if (key === 'chat_state') continue;
+    if (Array.isArray(value) && value.includes('composing')) return `${key} is typing…`;
+  }
+  return '';
+}
+
+function getAvatar(model: unknown): string {
+  if (!model || typeof model !== 'object' || !('get' in model) || typeof model.get !== 'function') return '';
+  const image = model.get('image');
+  const type = model.get('image_type') || 'image/png';
+  return typeof image === 'string' && image ? `data:${type};base64,${image}` : '';
+}
+
 @customElement('chat-list')
 export class ChatList extends LitElement {
   @state() private chats: ChatInfo[] = [];
@@ -63,6 +93,7 @@ export class ChatList extends LitElement {
   @state() private joinRoomJid = '';
   @state() private joinNick = '';
   @state() private loading = true;
+  @state() private showArchived = false;
   @property({ type: String }) selectedJid = '';
 
   private cleanups: Array<() => void> = [];
@@ -115,6 +146,10 @@ export class ChatList extends LitElement {
     api.listen.on('message', msgHandler);
     this.cleanups.push(() => api.listen.not('message', msgHandler));
 
+    const prefsHandler = () => this.loadChats();
+    window.addEventListener('chat-prefs-changed', prefsHandler);
+    this.cleanups.push(() => window.removeEventListener('chat-prefs-changed', prefsHandler));
+
     // Clearing a badge (or a read marker arriving from another device) changes the
     // model without emitting a `message` event. Reload on those changes too.
     const chatboxes = getConverseInternal()?.state?.chatboxes;
@@ -140,6 +175,8 @@ export class ChatList extends LitElement {
       const unreadByJid = new Map<string, number>();
       const lastByJid = new Map<string, string>();
       const textByJid = new Map<string, string>();
+      const typingByJid = new Map<string, string>();
+      const avatarByJid = new Map<string, string>();
 
       for (const chat of toArray<ChatModel>(allChats)) {
         const jid = String(chat.get('jid') || '');
@@ -149,6 +186,10 @@ export class ChatList extends LitElement {
         if (lastMessage) lastByJid.set(jid, lastMessage);
         const messagesText = getMessagesText(chat);
         if (messagesText) textByJid.set(jid, messagesText);
+        const typing = getTypingText(chat);
+        if (typing) typingByJid.set(jid, typing);
+        const avatar = getAvatar(chat.vcard);
+        if (avatar) avatarByJid.set(jid, avatar);
       }
 
       const contacts: ChatInfo[] = toArray<RosterContactLike>(rosterContacts)
@@ -175,10 +216,15 @@ export class ChatList extends LitElement {
               .join(' ')
               .toLowerCase(),
             topic: '',
+            typing: typingByJid.get(jid) || '',
+            avatar: getAvatar(c.vcard) || avatarByJid.get(jid) || '',
+            muted: isMuted(jid),
+            pinned: isPinned(jid),
+            archived: isArchived(jid),
           };
         });
 
-      const rooms: ChatInfo[] = toArray<ChatboxLike>(allRooms).map((r) => {
+      const rooms: ChatInfo[] = toArray<RoomModel>(allRooms).map((r) => {
         const jid = String(r.get('jid') || '');
         const subject = r.get('subject');
         const topic =
@@ -200,10 +246,17 @@ export class ChatList extends LitElement {
             .join(' ')
             .toLowerCase(),
           topic,
+          typing: typingByJid.get(jid) || '',
+          avatar: getAvatar(r.vcard) || avatarByJid.get(jid) || '',
+          muted: isMuted(jid),
+          pinned: isPinned(jid),
+          archived: isArchived(jid),
         };
       });
 
       this.chats = [...contacts, ...rooms].sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        if (a.archived !== b.archived) return a.archived ? 1 : -1;
         const aOnline = a.kind === 'contact' && a.presence !== 'offline' ? 0 : 1;
         const bOnline = b.kind === 'contact' && b.presence !== 'offline' ? 0 : 1;
         if (aOnline !== bOnline) return aOnline - bOnline;
@@ -215,9 +268,24 @@ export class ChatList extends LitElement {
   }
 
   private get filteredChats() {
+    const base = this.chats.filter((chat) => this.showArchived || !chat.archived);
     const q = this.searchQuery.trim().toLowerCase();
-    if (!q) return this.chats;
-    return this.chats.filter((chat) => chat.searchText.includes(q));
+    if (!q) return base;
+    return base.filter((chat) => chat.searchText.includes(q));
+  }
+
+  private get archivedCount(): number {
+    return this.chats.filter((chat) => chat.archived).length;
+  }
+
+  private async markAllRead() {
+    const api = getApi();
+    if (!api) return;
+    try {
+      const chats = await api.chats.get();
+      for (const chat of toArray<ChatboxLike>(chats)) await clearUnread(chat);
+      await this.loadChats();
+    } catch { /* ignore */ }
   }
 
   private selectChat(chat: ChatInfo) {
@@ -275,6 +343,7 @@ export class ChatList extends LitElement {
   }
 
   private subtitle(chat: ChatInfo): string {
+    if (chat.typing) return chat.typing;
     if (chat.lastMessage) return chat.lastMessage;
     if (chat.kind === 'room') return chat.topic || 'Group chat';
     return chat.status || this.presenceLabel(chat);
@@ -435,6 +504,50 @@ export class ChatList extends LitElement {
       background: var(--color-room-icon-bg);
       color: var(--color-room-icon-text);
       font-size: 0.875rem;
+    }
+
+    .avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+
+    .chat.archived {
+      opacity: 0.6;
+    }
+
+    .chat-flags {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.6875rem;
+      opacity: 0.8;
+      flex-shrink: 0;
+    }
+
+    .list-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      border-top: 1px solid var(--color-border-sidebar);
+      flex-shrink: 0;
+    }
+
+    .list-footer button {
+      background: none;
+      border: none;
+      color: var(--color-text-sidebar-muted);
+      font-size: 0.6875rem;
+      cursor: pointer;
+      padding: 0.125rem 0;
+    }
+
+    .list-footer button:hover {
+      color: var(--color-text-sidebar);
+      text-decoration: underline;
     }
 
     .presence-dot {
@@ -646,7 +759,7 @@ export class ChatList extends LitElement {
     const selected = this.selectedJid === chat.jid;
     return html`
       <div
-        class="chat ${selected ? 'selected' : ''}"
+        class="chat ${selected ? 'selected' : ''} ${chat.archived ? 'archived' : ''}"
         @click=${() => this.selectChat(chat)}
         @keydown=${(e: KeyboardEvent) => this.handleKeyDown(e, chat)}
         title="${chat.jid} — ${this.presenceLabel(chat)}"
@@ -654,20 +767,28 @@ export class ChatList extends LitElement {
         tabindex="0"
         aria-selected=${selected}
       >
-        ${chat.kind === 'room'
-          ? html`<div class="avatar room">#</div>`
-          : html`
-              <div class="avatar">
-                ${this.initials(chat.name)}
+        <div class="avatar ${chat.kind === 'room' ? 'room' : ''}">
+          ${chat.avatar
+            ? html`<img class="avatar-img" src=${chat.avatar} alt="" />`
+            : chat.kind === 'room'
+              ? '#'
+              : this.initials(chat.name)}
+          ${chat.kind === 'contact'
+            ? html`
                 <span
                   class="presence-dot ${chat.presence === 'online' || chat.presence === 'chat' ? 'online' : ''}"
                   style="background: ${this.presenceColor(chat)}"
                 ></span>
-              </div>
-            `}
+              `
+            : nothing}
+        </div>
         <div class="info">
           <div class="name">${chat.name}</div>
           <div class="status-text">${this.subtitle(chat)}</div>
+        </div>
+        <div class="chat-flags">
+          ${chat.pinned ? html`<span title="Pinned">&#x1F4CC;</span>` : nothing}
+          ${chat.muted ? html`<span title="Muted">&#x1F507;</span>` : nothing}
         </div>
         ${chat.numUnread > 0 ? html`<span class="badge">${chat.numUnread}</span>` : nothing}
       </div>
@@ -714,6 +835,15 @@ export class ChatList extends LitElement {
               (chat) => `${chat.kind}:${chat.jid}`,
               (chat) => this.renderChat(chat),
             )}
+      </div>
+
+      <div class="list-footer">
+        <button @click=${this.markAllRead}>Mark all read</button>
+        ${this.archivedCount > 0
+          ? html`<button @click=${() => (this.showArchived = !this.showArchived)}>
+              ${this.showArchived ? 'Hide archived' : `Archived (${this.archivedCount})`}
+            </button>`
+          : nothing}
       </div>
 
       ${this.showJoinDialog

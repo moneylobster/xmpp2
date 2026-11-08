@@ -26,6 +26,9 @@ export class ChatInfo extends LitElement {
   @property({ type: Boolean }) omemoActive = false;
   @property({ type: Boolean }) omemoSupported = false;
   @property({ type: Boolean }) canLeave = false;
+  @property({ type: Boolean }) pinned = false;
+  @property({ type: Boolean }) muted = false;
+  @property({ type: Boolean }) archived = false;
 
   private close() {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
@@ -37,6 +40,18 @@ export class ChatInfo extends LitElement {
 
   private leave() {
     this.dispatchEvent(new CustomEvent('leave', { bubbles: true, composed: true }));
+  }
+
+  private togglePin() {
+    this.dispatchEvent(new CustomEvent('toggle-pin', { bubbles: true, composed: true }));
+  }
+
+  private toggleMute() {
+    this.dispatchEvent(new CustomEvent('toggle-mute', { bubbles: true, composed: true }));
+  }
+
+  private toggleArchive() {
+    this.dispatchEvent(new CustomEvent('toggle-archive', { bubbles: true, composed: true }));
   }
 
   private async copyJid() {
@@ -342,6 +357,15 @@ export class ChatInfo extends LitElement {
 
           <div class="actions">
             <button class="action" @click=${this.copyJid}>Copy JID</button>
+            <button class="action ${this.pinned ? 'active' : ''}" @click=${this.togglePin}>
+              ${this.pinned ? 'Pinned' : 'Pin'}
+            </button>
+            <button class="action ${this.muted ? 'active' : ''}" @click=${this.toggleMute}>
+              ${this.muted ? 'Muted' : 'Mute'}
+            </button>
+            <button class="action ${this.archived ? 'active' : ''}" @click=${this.toggleArchive}>
+              ${this.archived ? 'Archived' : 'Archive'}
+            </button>
             ${this.omemoSupported
               ? html`<button class="action ${this.omemoActive ? 'active' : ''}" @click=${this.toggleOmemo}>
                   ${this.omemoActive ? 'Encryption on' : 'Encryption off'}

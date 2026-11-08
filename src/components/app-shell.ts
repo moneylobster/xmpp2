@@ -1,8 +1,9 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { getApi } from '@/xmpp/client';
+import { getApi, getConnectionStatus } from '@/xmpp/client';
 import { events, CONNECTION_STATUS_CHANGED } from '@/xmpp/events';
 import { shouldCountUnread, incrementUnread, getUnreadCount, clearUnread } from '@/utils/unread';
+import { isMuted } from '@/utils/preferences';
 import { toast } from './notification-toast';
 import type { ConnectionStatus } from '@/types';
 import './chat-list';
@@ -24,10 +25,12 @@ export class AppShell extends LitElement {
   @state() private mobileShowChat = false;
   @state() private viewMode: ViewMode = 'chat';
   @state() private totalUnread = 0;
+  @state() private connectionStatus: ConnectionStatus = getConnectionStatus();
 
   private cleanups: Array<() => void> = [];
   private originalTitle = document.title;
   private unreadInitialized = false;
+  private prevUnmuted = 0;
 
   connectedCallback() {
     super.connectedCallback();
@@ -39,6 +42,7 @@ export class AppShell extends LitElement {
     // Connection status toasts
     this.cleanups.push(
       events.on(CONNECTION_STATUS_CHANGED, (s: ConnectionStatus) => {
+        this.connectionStatus = s;
         if (s === 'connected') toast.success('Connected');
         else if (s === 'disconnected') toast.warning('Disconnected');
         else if (s === 'connfail') toast.error('Connection failed');
@@ -107,16 +111,21 @@ export class AppShell extends LitElement {
     if (!api) return;
 
     let total = 0;
+    let unmutedTotal = 0;
     try {
       // `api.chats.get()` returns every chatbox, including MUCs. Do not also add
       // `api.rooms.get()`: that is the same set filtered to groupchats and would
       // double-count every room.
       const chats = await api.chats.get();
       const chatList = Array.isArray(chats) ? chats : chats ? [chats] : [];
-      for (const c of chatList) total += getUnreadCount(c);
+      for (const c of chatList) {
+        const jid = String(c.get('jid') || '');
+        const count = getUnreadCount(c);
+        total += count;
+        if (!isMuted(jid)) unmutedTotal += count;
+      }
     } catch { /* ignore */ }
 
-    const prev = this.totalUnread;
     this.totalUnread = total;
 
     // Tab title badge
@@ -124,10 +133,12 @@ export class AppShell extends LitElement {
       ? `(${total}) ${this.originalTitle}`
       : this.originalTitle;
 
-    // Play sound on new unread, but not for counts restored on the first load.
-    if (this.unreadInitialized && total > prev && localStorage.getItem(SOUND_KEY) !== 'false') {
+    // Play sound on new unread, but not for counts restored on the first load
+    // and not when the only new unread chats are muted.
+    if (this.unreadInitialized && unmutedTotal > this.prevUnmuted && localStorage.getItem(SOUND_KEY) !== 'false') {
       notificationSound.play().catch(() => {});
     }
+    this.prevUnmuted = unmutedTotal;
     this.unreadInitialized = true;
   }
 
@@ -148,6 +159,27 @@ export class AppShell extends LitElement {
     try {
       await clearUnread(await api.chats.get(jid));
     } catch { /* ignore */ }
+  }
+
+  private get statusText(): string {
+    switch (this.connectionStatus) {
+      case 'connected': return 'Online';
+      case 'connecting':
+      case 'authenticating': return 'Connecting…';
+      case 'reconnecting': return 'Reconnecting…';
+      case 'authfail': return 'Auth failed';
+      case 'connfail':
+      case 'error': return 'Connection error';
+      default: return 'Offline';
+    }
+  }
+
+  private get statusColor(): string {
+    if (this.connectionStatus === 'connected') return '#4ade80';
+    if (this.connectionStatus === 'connecting' || this.connectionStatus === 'authenticating' || this.connectionStatus === 'reconnecting') {
+      return '#fbbf24';
+    }
+    return '#f87171';
   }
 
   private handleRoomLeft() {
@@ -344,10 +376,10 @@ export class AppShell extends LitElement {
     }
 
     if (this.selection.type === 'room') {
-      return html`<muc-view .jid=${this.selection.jid} @back=${this.handleBack} @left=${this.handleRoomLeft} style="flex:1"></muc-view>`;
+      return html`<muc-view .jid=${this.selection.jid} .connected=${this.connectionStatus === 'connected'} @back=${this.handleBack} @left=${this.handleRoomLeft} style="flex:1"></muc-view>`;
     }
 
-    return html`<chat-view .jid=${this.selection.jid} @back=${this.handleBack} style="flex:1"></chat-view>`;
+    return html`<chat-view .jid=${this.selection.jid} .connected=${this.connectionStatus === 'connected'} @back=${this.handleBack} style="flex:1"></chat-view>`;
   }
 
   render() {
@@ -363,9 +395,9 @@ export class AppShell extends LitElement {
         </div>
         <div class="user-info">
           <p class="user-jid">${this.userJid}</p>
-          <span class="status-badge">
-            <span class="status-dot"></span>
-            Online
+          <span class="status-badge" style="color: ${this.statusColor}">
+            <span class="status-dot" style="background: ${this.statusColor}"></span>
+            ${this.statusText}
           </span>
         </div>
         <div class="sidebar-content">

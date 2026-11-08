@@ -14,6 +14,10 @@ import { hapticLight } from '@/utils/haptics';
 import { clearUnread } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
+import {
+  getDraft, setDraft, clearDraft, isMuted, isPinned, isArchived,
+  setMuted, setPinned, setArchived,
+} from '@/utils/preferences';
 import './skeleton-loader';
 import './chat-info';
 import type { InfoMediaItem } from './chat-info';
@@ -51,6 +55,7 @@ interface OccupantModel {
 @customElement('muc-view')
 export class MucView extends LitElement {
   @property({ type: String }) jid = '';
+  @property({ type: Boolean }) connected = true;
   @state() private messages: MucMessage[] = [];
   @state() private occupants: OccupantInfo[] = [];
   @state() private inputText = '';
@@ -64,6 +69,9 @@ export class MucView extends LitElement {
   @state() private uploadProgress = 0;
   @state() private uploadError = '';
   @state() private dragOver = false;
+  @state() private pinned = false;
+  @state() private muted = false;
+  @state() private archived = false;
 
   @query('.messages') private messagesEl!: HTMLElement;
   @query('#file-input') private fileInput!: HTMLInputElement;
@@ -112,6 +120,10 @@ export class MucView extends LitElement {
     const api = getApi();
     if (!api || !this.jid) return;
     this.loading = true;
+    this.pinned = isPinned(this.jid);
+    this.muted = isMuted(this.jid);
+    this.archived = isArchived(this.jid);
+    this.inputText = getDraft(this.jid);
 
     try {
       // Always use open() to ensure the room is joined on the server
@@ -263,11 +275,12 @@ export class MucView extends LitElement {
 
   private async sendMessage() {
     const text = this.inputText.trim();
-    if (!text || !this.muc) return;
+    if (!text || !this.muc || !this.connected) return;
     try {
       await this.muc.sendMessage({ body: text });
       // Only clear after a successful send so a failed send doesn't lose the draft.
       this.inputText = '';
+      clearDraft(this.jid);
       await this.updateComplete;
       autoResizeTextarea(this.inputEl);
       suppressOwnMessageNotifications();
@@ -282,6 +295,7 @@ export class MucView extends LitElement {
   private handleInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
     this.inputText = target.value;
+    setDraft(this.jid, this.inputText);
     autoResizeTextarea(target);
   }
 
@@ -297,6 +311,28 @@ export class MucView extends LitElement {
     const newState = !this.omemoActive;
     this.muc.set('omemo_active', newState);
     this.omemoActive = newState;
+  }
+
+  private notifyPrefs() {
+    window.dispatchEvent(new CustomEvent('chat-prefs-changed'));
+  }
+
+  private togglePin() {
+    this.pinned = !this.pinned;
+    setPinned(this.jid, this.pinned);
+    this.notifyPrefs();
+  }
+
+  private toggleMute() {
+    this.muted = !this.muted;
+    setMuted(this.jid, this.muted);
+    this.notifyPrefs();
+  }
+
+  private toggleArchive() {
+    this.archived = !this.archived;
+    setArchived(this.jid, this.archived);
+    this.notifyPrefs();
   }
 
   private openFilePicker() {
@@ -911,7 +947,7 @@ export class MucView extends LitElement {
 
       <input type="file" id="file-input" hidden @change=${this.handleFileSelect} />
       <div class="input-bar">
-        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading} title="Attach file" aria-label="Attach file">
+        <button class="attach-btn" @click=${this.openFilePicker} ?disabled=${this.uploading || !this.connected} title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
           </svg>
@@ -919,7 +955,7 @@ export class MucView extends LitElement {
         <textarea
           rows="1"
           id="message-input"
-          placeholder="Message #${this.roomName}..."
+          placeholder=${this.connected ? `Message #${this.roomName}...` : 'Reconnecting…'}
           .value=${this.inputText}
           @input=${this.handleInput}
           @keydown=${this.handleKeyDown}
@@ -929,7 +965,7 @@ export class MucView extends LitElement {
         <button
           class="send-btn"
           @click=${this.sendMessage}
-          ?disabled=${!this.inputText.trim()}
+          ?disabled=${!this.connected || !this.inputText.trim()}
           title="Send"
           aria-label="Send message"
         >
@@ -952,8 +988,14 @@ export class MucView extends LitElement {
               .media=${this.mediaItems}
               .omemoActive=${this.omemoActive}
               .omemoSupported=${this.omemoSupported}
+              .pinned=${this.pinned}
+              .muted=${this.muted}
+              .archived=${this.archived}
               @close=${() => (this.showInfo = false)}
               @toggle-omemo=${this.toggleOmemo}
+              @toggle-pin=${this.togglePin}
+              @toggle-mute=${this.toggleMute}
+              @toggle-archive=${this.toggleArchive}
               @leave=${this.leaveRoom}
             ></chat-info>
           `
