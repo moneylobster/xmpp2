@@ -4,6 +4,7 @@ import {
   getUnreadCount,
   incrementUnread,
   clearUnread,
+  resolveFirstUnreadId,
   type ChatboxLike,
   type ParsedMessageLike,
 } from './unread';
@@ -161,5 +162,30 @@ describe('clearUnread', () => {
 
   it('is a no-op for a missing chatbox', async () => {
     await expect(clearUnread(null)).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveFirstUnreadId', () => {
+  const messages = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('uses the stored first unread id when it matches a message', () => {
+    expect(resolveFirstUnreadId(messages, 'b', 99)).toBe('b');
+  });
+
+  it('falls back to counting back from the newest message', () => {
+    expect(resolveFirstUnreadId(messages, 'unknown-id', 2)).toBe('b');
+  });
+
+  it('returns empty when there is no unread state', () => {
+    expect(resolveFirstUnreadId(messages, '', 0)).toBe('');
+    expect(resolveFirstUnreadId(messages, undefined, null)).toBe('');
+  });
+
+  it('clamps a count larger than the loaded message list', () => {
+    expect(resolveFirstUnreadId(messages, '', 10)).toBe('a');
+  });
+
+  it('returns empty when there are no loaded messages', () => {
+    expect(resolveFirstUnreadId([], '', 3)).toBe('');
   });
 });

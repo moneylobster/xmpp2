@@ -12,7 +12,7 @@ import {
   type UploadProgress,
 } from '@/utils/file-upload';
 import { hapticLight } from '@/utils/haptics';
-import { clearUnread } from '@/utils/unread';
+import { clearUnread, resolveFirstUnreadId } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import { getReply } from '@/utils/replies';
@@ -198,12 +198,14 @@ export class ChatView extends LitElement {
 
       // Capture the first unread message before clearing the counter, so the
       // conversation can render a "New messages" divider at that point.
-      this.firstUnreadId = String(this.chatbox.get('first_unread_id') || '');
+      const firstUnread = String(this.chatbox.get('first_unread_id') || '');
+      const unreadCount = Number(this.chatbox.get('num_unread') || 0);
 
       // Clear unread count when chat is opened.
       void clearUnread(this.chatbox);
 
       this.loadMessages();
+      this.firstUnreadId = resolveFirstUnreadId(this.messages, firstUnread, unreadCount);
       this.loading = false;
       this.scrollToBottom();
       this.updateComplete.then(() => autoResizeTextarea(this.inputEl));

@@ -171,3 +171,26 @@ export async function clearUnread(chatbox: ChatboxLike | null | undefined): Prom
   }
   forceClear();
 }
+
+/**
+ * Resolve the first unread message id for rendering a "New messages" divider.
+ *
+ * Converse stores `first_unread_id` as the message model's internal id, which
+ * does not always match our `msgid` snapshot (notably for MUCs). Fall back to
+ * counting back from the newest loaded message when the stored id cannot be
+ * matched.
+ */
+export function resolveFirstUnreadId<T extends { id: string }>(
+  messages: T[],
+  firstUnreadId: string | null | undefined,
+  unreadCount: number | null | undefined,
+): string {
+  if (firstUnreadId && messages.some((m) => m.id === firstUnreadId)) {
+    return firstUnreadId;
+  }
+  const count = Number(unreadCount) || 0;
+  if (count > 0 && messages.length > 0) {
+    return messages[Math.max(0, messages.length - count)]?.id || '';
+  }
+  return '';
+}

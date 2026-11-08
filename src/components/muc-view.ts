@@ -11,7 +11,7 @@ import {
   type UploadProgress,
 } from '@/utils/file-upload';
 import { hapticLight } from '@/utils/haptics';
-import { clearUnread } from '@/utils/unread';
+import { clearUnread, resolveFirstUnreadId } from '@/utils/unread';
 import { autoResizeTextarea } from '@/utils/textarea';
 import { suppressOwnMessageNotifications } from '@/utils/push';
 import { getReply } from '@/utils/replies';
@@ -180,7 +180,8 @@ export class MucView extends LitElement {
 
       // Capture the first unread message before clearing, so the room can show
       // a "New messages" divider at that point.
-      this.firstUnreadId = String(this.muc.get('first_unread_id') || '');
+      let firstUnread = String(this.muc.get('first_unread_id') || '');
+      let unreadCount = Number(this.muc.get('num_unread_general') || 0);
 
       // Clear the badge immediately; the join/MAM fetch below can take a while.
       void clearUnread(this.muc);
@@ -211,7 +212,12 @@ export class MucView extends LitElement {
         await this.muc.messages.fetched;
       }
 
+      // MAM backfill can add unread messages while joining.
+      firstUnread = String(this.muc.get('first_unread_id') || '') || firstUnread;
+      unreadCount = Math.max(unreadCount, Number(this.muc.get('num_unread_general') || 0));
+
       this.loadMessages();
+      this.firstUnreadId = resolveFirstUnreadId(this.messages, firstUnread, unreadCount);
       this.loadOccupants();
       this.loading = false;
       this.scrollToBottom();
